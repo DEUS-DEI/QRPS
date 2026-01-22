@@ -1,0 +1,5 @@
+https://www.google.com
+1234567890
+HELLO WORLD
+Texto de prueba para QR
+WIFI:S:MiRed;T:WPA;P:clave123;;

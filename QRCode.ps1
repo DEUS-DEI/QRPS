@@ -29,12 +29,16 @@ $script:ALPH = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ `$%*+-./:"
 $script:SPEC = @{
     '1L'=@{D=19;E=7}; '1M'=@{D=16;E=10}; '1Q'=@{D=13;E=13}; '1H'=@{D=9;E=17}
     '2L'=@{D=34;E=10};'2M'=@{D=28;E=16};'2Q'=@{D=22;E=22};'2H'=@{D=16;E=28}
+    '3L'=@{D=55;E=15};'3M'=@{D=44;E=26};'3Q'=@{D=34;E=36};'3H'=@{D=26;E=44}
+    '4L'=@{D=80;E=20};'4M'=@{D=64;E=36};'4Q'=@{D=48;E=52};'4H'=@{D=36;E=64}
 }
 $script:CAP = @{
     1=@{L=@(41,25,17);M=@(34,20,14);Q=@(27,16,11);H=@(17,10,7)}
     2=@{L=@(77,47,32);M=@(63,38,26);Q=@(48,29,20);H=@(34,20,14)}
+    3=@{L=@(127,77,53);M=@(101,61,42);Q=@(77,47,32);H=@(58,35,24)}
+    4=@{L=@(187,114,78);M=@(149,90,62);Q=@(111,67,46);H=@(82,50,34)}
 }
-$script:ALIGN = @{2=@(6,18)}
+$script:ALIGN = @{2=@(6,18); 3=@(6,22); 4=@(6,26)}
 
 function GetMode($t) {
     if ($t -match '^[0-9]+$') { return 'N' }
@@ -451,10 +455,14 @@ function New-QRCode {
     if ($Version -eq 0) {
         $mi = switch ($mode) { 'N'{0} 'A'{1} 'B'{2} }
         $len = if ($mode -eq 'B') { [Text.Encoding]::UTF8.GetByteCount($Data) } else { $Data.Length }
-        for ($v = 1; $v -le 2; $v++) {
-            if ($script:CAP[$v][$ECLevel][$mi] -ge $len) { $Version = $v; break }
+        
+        # Try versions 1 to 4
+        for ($v = 1; $v -le 4; $v++) {
+            if ($script:CAP.ContainsKey($v) -and $script:CAP[$v][$ECLevel][$mi] -ge $len) { 
+                $Version = $v; break 
+            }
         }
-        if ($Version -eq 0) { throw "Datos muy largos" }
+        if ($Version -eq 0) { throw "Datos muy largos (max soportado: Version 4)" }
     }
     
     Write-Host "Version: $Version ($(GetSize $Version)x$(GetSize $Version))" -ForegroundColor Cyan
@@ -491,4 +499,82 @@ function New-QRCode {
     return $final
 }
 
-Write-Host "`n  QR Generator FINAL - PowerShell Nativo`n" -ForegroundColor Magenta
+# ============================================================================
+# BATCH PROCESSING LOGIC
+# ============================================================================
+function Get-IniValue($content, $section, $key, $defaultValue) {
+    if ($content -match "(?ms)^\[$section\].*?^$key\s*=\s*([^`r`n]+)") {
+        return $matches[1].Trim()
+    }
+    return $defaultValue
+}
+
+function Start-BatchProcessing {
+    param([string]$IniPath = ".\config.ini")
+    
+    if (-not (Test-Path $IniPath)) { return }
+    
+    Write-Host "`n=== PROCESAMIENTO POR LOTES (CONFIG.INI) ===" -ForegroundColor Cyan
+    $iniContent = Get-Content $IniPath -Raw
+    
+    # Leer configuración
+    $inputFile = Get-IniValue $iniContent "Configuracion" "ArchivoEntrada" ".\lista_inputs.txt"
+    $outDir = Get-IniValue $iniContent "Configuracion" "CarpetaSalida" ".\salida_qr"
+    $ecLevel = Get-IniValue $iniContent "OpcionesQR" "NivelEC" "M"
+    $modSize = [int](Get-IniValue $iniContent "OpcionesQR" "TamanoModulo" "10")
+    $prefix = Get-IniValue $iniContent "NombresArchivos" "Prefijo" "qr_"
+    $useConsec = (Get-IniValue $iniContent "NombresArchivos" "UseConsecutivo" "si") -eq "si"
+    
+    # Validar entrada
+    $inputPath = Join-Path $PSScriptRoot $inputFile            
+    if (-not (Test-Path $inputPath)) {
+        Write-Host "Archivo de entrada no encontrado: $inputFile" -ForegroundColor Red
+        return
+    }
+    
+    # Crear carpeta salida
+    $outPath = Join-Path $PSScriptRoot $outDir
+    if (-not (Test-Path $outPath)) {
+        New-Item -ItemType Directory -Force -Path $outPath | Out-Null
+    }
+    
+    # Procesar líneas
+    $lines = Get-Content $inputPath
+    $count = 1
+    
+    foreach ($line in $lines) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        
+        # Determinar nombre archivo
+        $name = ""
+        if ($useConsec) {
+            $name = "$prefix$count.png"
+        } else {
+            # Sanitizar nombre
+            $safeName = $prefix + ($line -replace '[^a-zA-Z0-9]', '_')
+            if ($safeName.Length -gt 20) { $safeName = $safeName.Substring(0, 20) }
+            $name = "$safeName.png"
+        }
+        
+        $finalPath = Join-Path $outPath $name
+        
+        Write-Host "Procesando [$count]: $line" -ForegroundColor Gray
+        try {
+            New-QRCode -Data $line -OutputPath $finalPath -ECLevel $ecLevel -ModuleSize $modSize
+        } catch {
+            Write-Host "Error generando QR para '$line': $_" -ForegroundColor Red
+        }
+        $count++
+    }
+    
+    Write-Host "Proceso completado. QRs guardados en: $outDir" -ForegroundColor Green
+}
+
+# Ejecutar proceso batch si existe config.ini y se llama el script directamente
+if ($MyInvocation.InvocationName -ne '.') {
+    if (Test-Path ".\config.ini") {
+        Start-BatchProcessing
+    } else {
+        Write-Host "`n  QR Generator FINAL - PowerShell Nativo`n" -ForegroundColor Magenta
+    }
+}

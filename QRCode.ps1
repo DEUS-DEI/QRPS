@@ -170,18 +170,6 @@ function Get-Segments($txt) {
     
     while ($i -lt $len) {
         # 1. Calc run lengths at current position
-        # Kanji
-        $kRun = 0; $j = $i
-        while ($j -lt $len) {
-             if ($j + 1 -ge $len) { break } # Need 2 chars for test? No, GetBytes logic...
-             $sub = $txt.Substring($j, 1)
-             $b = $sjis.GetBytes($sub)
-             if ($b.Length -eq 2) {
-                $val = ($b[0] -shl 8) -bor $b[1]
-                $valid = ($val -ge 0x8140 -and $val -le 0x9FFC) -or ($val -ge 0xE040 -and $val -le 0xEBBF)
-                if ($valid) { $kRun++; $j++ } else { break }
-             } else { break }
-        }
         
         # Numeric
         $nRun = 0; $j = $i
@@ -191,10 +179,9 @@ function Get-Segments($txt) {
         $nextMode = 'B'
         $nextLen = 1
         
-        if ($kRun -ge 3) { $nextMode='K'; $nextLen=$kRun }
-        elseif ($nRun -ge 4) { $nextMode='N'; $nextLen=$nRun }
+        if ($nRun -ge 4) { $nextMode='N'; $nextLen=$nRun }
         else {
-             # Default to Byte mode (Robustness over Alpha compression)
+             # Default to Byte mode (Handles Alpha, Kanji/Unicode as UTF-8)
              $nextMode = 'B'
              $nextLen = 1
         }

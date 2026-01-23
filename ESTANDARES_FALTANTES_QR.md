@@ -1,0 +1,358 @@
+# 🚧 Estándares y Variantes QR Faltantes
+
+## Resumen Ejecutivo
+
+El generador actual implementa **QR Code Model 2** según ISO/IEC 18004, pero existen múltiples estándares, variantes y anexos adicionales que no están implementados. Este documento identifica las especificaciones faltantes y su relevancia para una implementación completa.
+
+---
+
+## 📊 Tabla de Estándares Faltantes
+
+| **Estándar/Variante** | **Estado** | **Estándar ISO** | **Prioridad** | **Complejidad** |
+|:---|:---:|:---|:---:|:---:|
+| **QR Code Model 1** | ❌ | ISO/IEC 18004:2000 | 🟡 Media | 🟢 Baja |
+| **Micro QR Code** | ❌ | ISO/IEC 18004 Anexo | 🔴 Alta | 🟡 Media |
+| **rMQR (Rectangular)** | ❌ | ISO/IEC 23941:2022 | 🔴 Alta | 🔴 Alta |
+| **SQRC (Secure QR)** | ❌ | Propietario Denso | 🟡 Media | 🔴 Alta |
+| **FrameQR** | ❌ | Propietario Denso | 🟢 Baja | 🟡 Media |
+| **iQR Code** | ❌ | Propietario Denso | 🟡 Media | 🔴 Alta |
+| **GS1 QR Code** | ❌ | GS1 General Spec | 🔴 Alta | 🟢 Baja |
+| **Structured Append** | ❌ | ISO/IEC 18004 | 🟡 Media | 🟡 Media |
+| **FNC1 Mode** | ❌ | ISO/IEC 18004 | 🔴 Alta | 🟢 Baja |
+| **HCC2D (Prototype)** | ❌ | Experimental | 🟢 Baja | 🔴 Alta |
+
+---
+
+## 🔍 Análisis Detallado de Estándares Faltantes
+
+### 1. **QR Code Model 1** ❌
+**Estándar**: ISO/IEC 18004:2000 (Retirado)  
+**Prioridad**: 🟡 Media | **Complejidad**: 🟢 Baja
+
+#### Características:
+- Versión original del QR Code (1994-2000)
+- Sin patrones de alineación (alignment patterns)
+- Máximo 14 versiones (vs 40 en Model 2)
+- Capacidad limitada: máximo 707 caracteres numéricos
+- Regiones funcionales diferentes en esquinas inferiores
+
+#### Diferencias vs Model 2:
+- **Patrones de Alineación**: Ausentes en Model 1
+- **Capacidad**: ~50% menor que Model 2
+- **Versiones**: V1-V14 únicamente
+- **Compatibilidad**: Lectores modernos pueden leer ambos
+
+#### Implementación Requerida:
+```powershell
+# Modificaciones necesarias:
+- Eliminar patrones de alineación para V2+
+- Ajustar tablas de capacidad (V1-V14)
+- Modificar estructura de regiones funcionales
+- Mantener compatibilidad con lectores actuales
+```
+
+---
+
+### 2. **Micro QR Code** ❌
+**Estándar**: ISO/IEC 18004 Anexo E  
+**Prioridad**: 🔴 Alta | **Complejidad**: 🟡 Media
+
+#### Características:
+- **Tamaños**: 11×11, 13×13, 15×15, 17×17 módulos
+- **Versiones**: M1, M2, M3, M4
+- **Un solo patrón finder** (esquina superior izquierda)
+- **Capacidad máxima**: 35 numéricos, 21 alfanuméricos, 15 bytes
+- **Niveles EC**: Solo L y M (no Q ni H)
+
+#### Especificaciones Técnicas:
+| **Versión** | **Tamaño** | **Numérico** | **Alfanumérico** | **Byte** | **EC** |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| M1 | 11×11 | 5 | - | - | Solo detección |
+| M2 | 13×13 | 10 | 6 | - | L, M |
+| M3 | 15×15 | 23 | 14 | 9 | L, M |
+| M4 | 17×17 | 35 | 21 | 15 | L, M |
+
+#### Casos de Uso:
+- Componentes electrónicos pequeños
+- Etiquetas de medicamentos
+- Joyería y relojes
+- Circuitos impresos (PCB)
+
+---
+
+### 3. **rMQR (Rectangular Micro QR)** ❌
+**Estándar**: ISO/IEC 23941:2022  
+**Prioridad**: 🔴 Alta | **Complejidad**: 🔴 Alta
+
+#### Características:
+- **Forma rectangular** (no cuadrada)
+- **27 versiones**: R7×43 hasta R17×139
+- **Ratio máximo**: 1:19 (ancho:alto)
+- **Capacidad**: 10× mayor que Micro QR
+- **Compatibilidad**: Espacios donde se usan códigos 1D
+
+#### Especificaciones:
+- **Versiones**: R7×43, R9×43, R11×27, R13×27, R15×43, R17×43, R7×59, R9×59, R11×43, R13×43, R15×59, R17×59, R7×77, R9×77, R11×59, R13×59, R15×77, R17×77, R7×99, R9×99, R11×77, R13×77, R15×99, R17×99, R7×139, R9×139, R11×99, R13×99, R15×139, R17×139
+- **Finder patterns**: 2 patrones (esquinas opuestas)
+- **Alignment patterns**: Según versión
+- **Error correction**: L, M, H (no Q)
+
+#### Aplicaciones:
+- Etiquetas de productos alargadas
+- Códigos en bordes de cajas
+- Reemplazo de códigos de barras 1D
+- Espacios rectangulares estrechos
+
+---
+
+### 4. **SQRC (Secure QR Code)** ❌
+**Estándar**: Propietario Denso Wave  
+**Prioridad**: 🟡 Media | **Complejidad**: 🔴 Alta
+
+#### Características:
+- **Encriptación**: Datos privados encriptados
+- **Lectura dual**: Pública (todos) + Privada (autorizada)
+- **Compatibilidad**: Lectores estándar ven solo datos públicos
+- **Seguridad**: Clave de encriptación requerida para datos privados
+
+#### Estructura:
+```
+[Datos Públicos] + [Datos Encriptados] + [Metadatos de Seguridad]
+```
+
+#### Casos de Uso:
+- Documentos de identidad
+- Tarjetas de acceso
+- Información médica confidencial
+- Sistemas de autenticación
+
+---
+
+### 5. **FrameQR** ❌
+**Estándar**: Propietario Denso Wave  
+**Prioridad**: 🟢 Baja | **Complejidad**: 🟡 Media
+
+#### Características:
+- **Marco personalizable**: Área central para diseño/logo
+- **Funcionalidad completa**: Mantiene capacidad de lectura
+- **Estética mejorada**: Integración visual con diseño
+- **Canvas central**: Espacio libre para contenido visual
+
+#### Aplicaciones:
+- Marketing y publicidad
+- Códigos decorativos
+- Integración en diseños
+- Branding corporativo
+
+---
+
+### 6. **iQR Code** ❌
+**Estándar**: Propietario Denso Wave  
+**Prioridad**: 🟡 Media | **Complejidad**: 🔴 Alta
+
+#### Características:
+- **Forma flexible**: Cuadrado o rectangular
+- **Alta capacidad**: Hasta 40,000 caracteres numéricos
+- **Múltiples tamaños**: Desde pequeño hasta muy grande
+- **Reconstrucción**: Lectura parcial con alta tolerancia a daños
+
+#### Especificaciones:
+- **Versiones**: Múltiples configuraciones
+- **Capacidad máxima**: 40,000 numéricos / 24,000 alfanuméricos
+- **Error correction**: Niveles avanzados
+- **Flexibilidad**: Adaptable a diferentes espacios
+
+---
+
+### 7. **GS1 QR Code** ❌
+**Estándar**: GS1 General Specifications  
+**Prioridad**: 🔴 Alta | **Complejidad**: 🟢 Baja
+
+#### Características:
+- **Estructura GS1**: Application Identifiers (AI)
+- **FNC1**: Indicador de formato GS1 en primera posición
+- **Datos estructurados**: GTIN, fechas, lotes, etc.
+- **Trazabilidad**: Cadena de suministro global
+
+#### Estructura de Datos:
+```
+FNC1 + (01)GTIN + (17)YYMMDD + (10)LOTE + (21)SERIAL
+```
+
+#### Application Identifiers Comunes:
+- **(01)**: GTIN (Global Trade Item Number)
+- **(17)**: Fecha de caducidad
+- **(10)**: Número de lote
+- **(21)**: Número de serie
+- **(30)**: Cantidad variable
+
+#### Implementación Requerida:
+```powershell
+# Modo FNC1 (Indicador 5 = 0b0101)
+function Add-FNC1Mode {
+    param([string]$Data, [int]$Position = 1)
+    # Position 1: FNC1 al inicio
+    # Position 2: FNC1 con Application Indicator
+}
+```
+
+---
+
+### 8. **Structured Append** ❌
+**Estándar**: ISO/IEC 18004 Modo 3  
+**Prioridad**: 🟡 Media | **Complejidad**: 🟡 Media
+
+#### Características:
+- **Múltiples símbolos**: Datos divididos en varios QR
+- **Secuencia ordenada**: Hasta 16 símbolos por secuencia
+- **Reconstrucción**: Lectores combinan automáticamente
+- **Paridad**: Verificación de integridad de secuencia
+
+#### Estructura:
+```
+Modo: 0011 (4 bits)
+Posición del símbolo: 4 bits (0-15)
+Total de símbolos: 4 bits (1-16)
+Paridad: 8 bits (XOR de todos los datos)
+```
+
+#### Casos de Uso:
+- Documentos largos
+- Bases de datos extensas
+- Información que excede capacidad de un QR
+- Sistemas de respaldo distribuido
+
+---
+
+### 9. **FNC1 Mode** ❌
+**Estándar**: ISO/IEC 18004 Modos 5 y 9  
+**Prioridad**: 🔴 Alta | **Complejidad**: 🟢 Baja
+
+#### Características:
+- **Modo 5**: FNC1 en primera posición (GS1)
+- **Modo 9**: FNC1 en segunda posición (AIM)
+- **Separador de campos**: Carácter especial GS (ASCII 29)
+- **Compatibilidad**: Sistemas de inventario y logística
+
+#### Implementación:
+```powershell
+# Modo 5: FNC1 Primera Posición
+[0101 : 4] + [Datos con formato GS1]
+
+# Modo 9: FNC1 Segunda Posición  
+[1001 : 4] + [Application Indicator : 8] + [Datos]
+```
+
+---
+
+## 🎯 Prioridades de Implementación
+
+### **Prioridad Alta** 🔴
+1. **Micro QR Code**: Demanda industrial alta
+2. **rMQR**: Estándar ISO reciente (2022)
+3. **GS1 QR Code**: Esencial para comercio
+4. **FNC1 Mode**: Requerido para GS1
+
+### **Prioridad Media** 🟡
+1. **QR Code Model 1**: Compatibilidad histórica
+2. **SQRC**: Aplicaciones de seguridad
+3. **iQR Code**: Casos especializados
+4. **Structured Append**: Datos grandes
+
+### **Prioridad Baja** 🟢
+1. **FrameQR**: Principalmente estético
+2. **HCC2D**: Experimental/prototipo
+
+---
+
+## 📋 Anexos ISO/IEC 18004 Faltantes
+
+### **Anexo A**: Tablas de Capacidad de Caracteres
+- ✅ **Implementado**: Tablas completas V1-V40
+
+### **Anexo B**: Polinomios Generadores
+- ✅ **Implementado**: Reed-Solomon completo
+
+### **Anexo C**: Algoritmo de Decodificación de Referencia
+- ❌ **Faltante**: Solo generación, no decodificación
+
+### **Anexo D**: Parámetros de Calidad de Producción
+- ❌ **Faltante**: Métricas de calidad de impresión
+
+### **Anexo E**: Micro QR Code
+- ❌ **Faltante**: Especificación completa
+
+### **Anexo F**: Structured Append
+- ❌ **Faltante**: Modo de múltiples símbolos
+
+### **Anexo G**: Ejemplos de Codificación
+- ✅ **Parcial**: Algunos ejemplos implementados
+
+---
+
+## 🛠️ Roadmap de Implementación
+
+### **Fase 1: Compatibilidad Comercial** (2-3 meses)
+- [ ] FNC1 Mode (Modos 5 y 9)
+- [ ] GS1 QR Code con Application Identifiers
+- [ ] Structured Append básico
+- [ ] Validación de datos GS1
+
+### **Fase 2: Variantes Compactas** (3-4 meses)
+- [ ] Micro QR Code (M1-M4)
+- [ ] Optimización para espacios pequeños
+- [ ] Detección automática de tamaño óptimo
+- [ ] Exportación multi-formato
+
+### **Fase 3: Formatos Avanzados** (4-6 meses)
+- [ ] rMQR (Rectangular Micro QR)
+- [ ] 27 versiones rectangulares
+- [ ] Algoritmos de optimización de forma
+- [ ] Compatibilidad con espacios 1D
+
+### **Fase 4: Características Especializadas** (6+ meses)
+- [ ] QR Code Model 1 (compatibilidad histórica)
+- [ ] SQRC (investigación de encriptación)
+- [ ] FrameQR (integración de diseño)
+- [ ] iQR Code (análisis de viabilidad)
+
+---
+
+## 💡 Recomendaciones
+
+### **Implementación Inmediata**
+1. **FNC1 Mode**: Crítico para adopción comercial
+2. **GS1 QR Code**: Estándar industrial esencial
+3. **Micro QR Code**: Alta demanda en IoT/electrónicos
+
+### **Investigación Requerida**
+1. **SQRC**: Especificaciones de encriptación no públicas
+2. **iQR Code**: Documentación técnica limitada
+3. **rMQR**: Complejidad de algoritmos rectangulares
+
+### **Consideraciones Técnicas**
+- Mantener compatibilidad con implementación actual
+- Modularizar código para diferentes variantes
+- Implementar detección automática de formato óptimo
+- Considerar impacto en rendimiento
+
+---
+
+## 📊 Impacto en Adopción
+
+### **Sin Implementación de Faltantes**
+- ❌ Limitado a aplicaciones básicas
+- ❌ No compatible con sistemas GS1
+- ❌ Sin soporte para espacios pequeños
+- ❌ Capacidad limitada para datos grandes
+
+### **Con Implementación Completa**
+- ✅ Compatibilidad comercial total
+- ✅ Soporte para todos los casos de uso
+- ✅ Adopción en industria y logística
+- ✅ Flexibilidad para aplicaciones futuras
+
+---
+
+*Análisis realizado el 23 de enero de 2026*  
+*Basado en estándares ISO/IEC 18004:2024, ISO/IEC 23941:2022 y especificaciones GS1*

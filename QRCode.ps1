@@ -164,6 +164,14 @@ for ($v = 1; $v -le 40; $v++) {
 
 # --- SEGMENTATION & ENCODING ENGINE (ISO 18004 COMPLIANT) ---
 
+function IsKanjiChar($ch) {
+    $sjis = [System.Text.Encoding]::GetEncoding(932)
+    $bytes = $sjis.GetBytes([string]$ch)
+    if ($bytes.Length -ne 2) { return $false }
+    $val = ([int]$bytes[0] -shl 8) -bor [int]$bytes[1]
+    return (($val -ge 0x8140 -and $val -le 0x9FFC) -or ($val -ge 0xE040 -and $val -le 0xEBBF))
+}
+
 function Get-Segments($txt) {
     $segs = @()
     $len = $txt.Length
@@ -176,11 +184,19 @@ function Get-Segments($txt) {
         
         $aRun = 0; $j = $i
         while ($j -lt $len -and $script:ALPH.Contains($txt[$j])) { $aRun++; $j++ }
+
+        $kRun = 0; $j = $i
+        while ($j -lt $len) {
+            $ch = $txt.Substring($j, 1)
+            if (-not (IsKanjiChar $ch)) { break }
+            $kRun++; $j++
+        }
         
         $mode = 'B'
         $mLen = 1
         
-        if ($nRun -ge 4) { $mode = 'N'; $mLen = $nRun }
+        if ($kRun -gt 0) { $mode = 'K'; $mLen = $kRun }
+        elseif ($nRun -ge 4) { $mode = 'N'; $mLen = $nRun }
         elseif ($aRun -ge 6) { $mode = 'A'; $mLen = $aRun }
         else {
             $mode = 'B'
@@ -270,7 +286,7 @@ function Encode($segments, $ver, $ec) {
                 $sjis = [System.Text.Encoding]::GetEncoding(932)
                 $bytes = $sjis.GetBytes($txt)
                 for ($i = 0; $i -lt $bytes.Length; $i += 2) {
-                    $val = ($bytes[$i] -shl 8) -bor $bytes[$i+1]
+                    $val = ([int]$bytes[$i] -shl 8) -bor [int]$bytes[$i+1]
                     if ($val -ge 0x8140 -and $val -le 0x9FFC) { $val -= 0x8140 }
                     elseif ($val -ge 0xE040 -and $val -le 0xEBBF) { $val -= 0xC140 }
                     $val = (($val -shr 8) * 0xC0) + ($val -band 0xFF)
@@ -733,18 +749,19 @@ function New-QRCode {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     
     # 1. Segment Data
-    $segments = @()
+    $segments = Get-Segments $Data
     
-    # Add ECI Header if requested or needed for UTF-8
     if ($EciValue -gt 0) {
-        $segments += @{Mode='ECI'; Data="$EciValue"}
-    } elseif ($Data -match '[^ -~]') { # Contains non-ASCII
-        # Auto-inject UTF-8 ECI for maximum compatibility
-        $segments += @{Mode='ECI'; Data="26"}
+        $segments = @(@{Mode='ECI'; Data="$EciValue"}) + $segments
+    } else {
+        $needsUtf8 = $false
+        foreach ($seg in $segments) {
+            if ($seg.Mode -eq 'B' -and $seg.Data -match '[^ -~]') { $needsUtf8 = $true; break }
+        }
+        if ($needsUtf8) {
+            $segments = @(@{Mode='ECI'; Data="26"}) + $segments
+        }
     }
-    
-    # Add Data Segments (Automatic Mixed Mode)
-    $segments += Get-Segments $Data
     
     # Display Segments info
     $modesStr = ($segments | ForEach-Object { $_.Mode }) -join "+"

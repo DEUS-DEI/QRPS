@@ -30,7 +30,7 @@ pwsh -Version
     *   🔠 **Alfanumérico:** Para texto simple y símbolos comunes.
     *   🌐 **Byte (UTF-8):** Compatibilidad universal para tildes, eñes y caracteres especiales.
 *   **ECI (Extended Channel Interpretation):** Inserción automática de ECI 26 para que los escáneres identifiquen correctamente los datos en UTF-8.
-*   **Kanji (Shift-JIS):** Codificador disponible, sin selección automática de segmentos.
+*   **Kanji (Shift-JIS):** Selección automática de segmentos para caracteres japoneses.
 *   **Corrección de Errores (ECC):** Soporte total para niveles **L, M, Q y H**, garantizando legibilidad incluso en superficies dañadas.
 *   **Exportación Directa:** Genera archivos **PNG** nítidos con control total sobre el tamaño del módulo y bordes (quiet zone).
 

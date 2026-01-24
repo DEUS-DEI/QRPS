@@ -7,7 +7,6 @@ El generador actual implementa **QR Code Model 2** según ISO/IEC 18004, pero ex
 ### Faltantes Dentro de QR Model 2
 - **Structured Append** (Modo 3) no implementado
 - **FNC1/GS1** (Modos 5 y 9) no implementado
-- **Selección automática de modo Kanji** no disponible
 - **Decodificación** no implementada (solo generación)
 
 ---

@@ -13,8 +13,8 @@ Este generador de códigos QR implementa una **solución 100% nativa en PowerShe
 | **Estándar Base** | ✅ | ISO/IEC 18004 (QR Model 2) | Implementación completa |
 | **Versiones Soportadas** | ✅ | V1-V40 (21x21 a 177x177) | Rango completo estándar |
 | **Niveles de Corrección** | ✅ | L, M, Q, H (7%-30%) | Todos los niveles ISO |
-| **Modos de Codificación** | ✅ | Numérico, Alfanumérico, Byte (UTF-8) | Segmentación automática N/A/B |
-| **Modo Kanji (Shift-JIS)** | ⚠️ | Codificador disponible | Sin selección automática |
+| **Modos de Codificación** | ✅ | Numérico, Alfanumérico, Byte (UTF-8), Kanji | Segmentación automática N/A/B/K |
+| **Modo Kanji (Shift-JIS)** | ✅ | Codificador disponible | Selección automática habilitada |
 | **Segmentación Automática** | ✅ | Motor inteligente multi-modo | Optimización de capacidad |
 | **Reed-Solomon ECC** | ✅ | Galois Field GF(256) | Algoritmo estándar |
 | **Patrones Funcionales** | ✅ | Finder, Timing, Alignment | Todos los patrones ISO |
@@ -36,6 +36,7 @@ Este generador de códigos QR implementa una **solución 100% nativa en PowerShe
 - **Modo Numérico**: Optimización para dígitos (0-9) con empaquetado de 3 dígitos en 10 bits
 - **Modo Alfanumérico**: Soporte para 45 caracteres estándar con empaquetado de 2 caracteres en 11 bits
 - **Modo Byte**: Codificación UTF-8 completa para caracteres internacionales
+- **Modo Kanji**: Codificación Shift-JIS conforme a ISO/IEC 18004
 - **ECI (Extended Channel Interpretation)**: Inserción automática de ECI 26 para UTF-8
 
 ### **Corrección de Errores**
@@ -52,7 +53,7 @@ Este generador de códigos QR implementa una **solución 100% nativa en PowerShe
 - **Dark Module**: Módulo oscuro fijo en posición (4V+9, 8)
 
 ### **Optimizaciones Avanzadas**
-- **Segmentación Inteligente**: Cambio automático entre modos Numérico/Alfanumérico/Byte
+- **Segmentación Inteligente**: Cambio automático entre modos Numérico/Alfanumérico/Byte/Kanji
 - **Selección de Versión**: Cálculo automático de la versión mínima requerida
 - **Evaluación de Máscaras**: 4 reglas de penalización para seleccionar la mejor máscara
 - **Capacidad Máxima**: Tablas precalculadas para todas las combinaciones versión/EC
@@ -183,8 +184,6 @@ El generador implementa **100% de las especificaciones críticas** del estándar
 ---
 
 ## ⚠️ Limitaciones Actuales (Modelo 2)
-
-- **Modo Kanji**: El codificador existe, pero la segmentación automática no lo activa
 - **Structured Append**: No disponible (ISO/IEC 18004 Modo 3)
 - **FNC1/GS1**: No disponible (Modos 5 y 9)
 - **Variantes Micro/rMQR**: No disponibles

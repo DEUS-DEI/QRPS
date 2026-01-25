@@ -62,6 +62,8 @@ Texto corto rMQR H	RMQR_SIMPLE	R7x77-H	.\QRCode.ps1 -Data "Rectangular QR" -Symb
 Payload medio rMQR M	RMQR_MEDIO	R9x99-M	.\QRCode.ps1 -Data "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" -Symbol "rMQR" -ECLevel "M" -OutputPath "rmqr_med_m.png"
 Payload grande rMQR H	RMQR_GRANDE	R17x139-H	.\QRCode.ps1 -Data "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" -Symbol "rMQR" -ECLevel "H" -OutputPath "rmqr_big_h.png"
 UTF-8 rMQR M	RMQR_UTF8	R9x139-M	.\QRCode.ps1 -Data "Datos con ñ á é í ó ú" -Symbol "rMQR" -ECLevel "M" -OutputPath "rmqr_utf8_m.png"
+Crítico R11x99 M	RMQR_CRITICO	R11x99-M	.\QRCode.ps1 -Data "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" -Symbol "rMQR" -ECLevel "M" -OutputPath "rmqr_r11x99_m.png"
+Crítico R13x99 H	RMQR_CRITICO	R13x99-H	.\QRCode.ps1 -Data "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" -Symbol "rMQR" -ECLevel "H" -OutputPath "rmqr_r13x99_h.png"
 
 # GS1 FNC1 casos reales adicionales
 GS1 GTIN+Fecha+Lote+Serial	GS1	Modelo2-FNC1-Primero	.\QRCode.ps1 -Data "01123456789012311726010110LOT1234521SERIAL12345" -Fnc1First -OutputPath "qr_gs1_full.png"

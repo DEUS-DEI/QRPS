@@ -168,17 +168,6 @@ foreach ($k in $script:RMQR_SPEC.Keys) {
         }
     }
 }
-$script:RMQR_CB_VI = @{}
-foreach ($k in $script:RMQR_SPEC.Keys) {
-    $sp = $script:RMQR_SPEC[$k]
-    $grp = if ($sp.H -le 9) { 'S' } elseif ($sp.H -le 13) { 'M' } else { 'L' }
-    $cb = switch ($grp) {
-        'S' { @{ N=10; A=9;  B=8;  K=8 } }
-        'M' { @{ N=12; A=11; B=16; K=10 } }
-        'L' { @{ N=14; A=13; B=16; K=12 } }
-    }
-    $script:RMQR_CB_VI[$sp.VI] = $cb
-}
 
 for ($v = 1; $v -le 40; $v++) {
     $script:CAP[$v] = @{}
@@ -623,7 +612,7 @@ function RMQREncode($txt, $spec, $ec) {
     $bits = New-Object System.Collections.ArrayList
     $de = if ($ec -eq 'H') { $spec.H2 } else { $spec.M }
     $capBits = $de.D * 8
-    $cbMap = $script:RMQR_CB_VI[$spec.VI]
+    $cbMap = Get-RMQRCountBitsMap $spec
     $needsUtf8 = $false
     foreach ($seg in $segments) {
         if ($seg.Mode -eq 'B' -and $seg.Data -match '[^ -~]') { $needsUtf8 = $true; break }
@@ -707,6 +696,20 @@ function RMQREncode($txt, $spec, $ec) {
         $dataCW += $byte
     }
     return $dataCW
+}
+
+function Get-RMQRCountBitsMap($spec) {
+    $h = $spec.H; $w = $spec.W
+    $grp = $null
+    if ($w -ge 99) { $grp = 'L' }
+    elseif ($h -le 9) { $grp = (if ($w -ge 77) { 'M' } else { 'S' }) }
+    elseif ($h -le 13) { $grp = 'M' }
+    else { $grp = 'L' }
+    switch ($grp) {
+        'S' { return @{ N=10; A=9;  B=8;  K=8 } }
+        'M' { return @{ N=12; A=11; B=16; K=10 } }
+        'L' { return @{ N=14; A=13; B=16; K=12 } }
+    }
 }
 
 function GetGen($n) {

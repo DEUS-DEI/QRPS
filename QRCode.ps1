@@ -148,6 +148,26 @@ $script:RMQR_SPEC = @{
     'R17x99' = @{ VI=30; H=17; W=99;  M=@{D=100;E=60}; H2=@{D=56; E=104} }
     'R17x139'= @{ VI=31; H=17; W=139; M=@{D=152;E=80}; H2=@{D=76; E=156} }
 }
+$script:RMQR_CAP = @{}
+foreach ($k in $script:RMQR_SPEC.Keys) {
+    $sp = $script:RMQR_SPEC[$k]
+    $dM = $sp.M.D; $dH = $sp.H2.D
+    $bitsM = $dM * 8; $bitsH = $dH * 8
+    $script:RMQR_CAP[$k] = @{
+        'M' = @{
+            N = [Math]::Floor(($bitsM / 10) * 3)
+            A = [Math]::Floor(($bitsM / 11) * 2)
+            B = $dM
+            K = [Math]::Floor($bitsM / 13)
+        }
+        'H' = @{
+            N = [Math]::Floor(($bitsH / 10) * 3)
+            A = [Math]::Floor(($bitsH / 11) * 2)
+            B = $dH
+            K = [Math]::Floor($bitsH / 13)
+        }
+    }
+}
 
 for ($v = 1; $v -le 40; $v++) {
     $script:CAP[$v] = @{}
@@ -995,6 +1015,52 @@ function ExportPng {
     $bmp.Dispose()
 }
 
+function ExportPngRect {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        $m,
+        $path,
+        $scale,
+        $quiet
+    )
+    if (-not $PSCmdlet.ShouldProcess($path, "Exportar PNG")) { return }
+    Add-Type -AssemblyName System.Drawing
+    $imgW = ($m.Width + $quiet * 2) * $scale
+    $imgH = ($m.Height + $quiet * 2) * $scale
+    $bmp = New-Object Drawing.Bitmap $imgW, $imgH
+    $g = [Drawing.Graphics]::FromImage($bmp)
+    $g.Clear([Drawing.Color]::White)
+    $black = [Drawing.Brushes]::Black
+    for ($r = 0; $r -lt $m.Height; $r++) {
+        for ($c = 0; $c -lt $m.Width; $c++) {
+            if ($m.Mod["$r,$c"] -eq 1) {
+                $x = ($c + $quiet) * $scale
+                $y = ($r + $quiet) * $scale
+                $g.FillRectangle($black, $x, $y, $scale, $scale)
+            }
+        }
+    }
+    $g.Dispose()
+    $bmp.Save($path, [Drawing.Imaging.ImageFormat]::Png)
+    $bmp.Dispose()
+}
+
+function ShowConsoleRect {
+    param($m)
+    Write-Output ""
+    $border = [string]::new([char]0x2588, ($m.Width + 2) * 2)
+    Write-Output "  $border"
+    for ($r = 0; $r -lt $m.Height; $r++) {
+        $line = "  " + [char]0x2588 + [char]0x2588
+        for ($c = 0; $c -lt $m.Width; $c++) {
+            $line += if ($m.Mod["$r,$c"] -eq 1) { "  " } else { [string]::new([char]0x2588, 2) }
+        }
+        Write-Output "$line$([char]0x2588)$([char]0x2588)"
+    }
+    Write-Output "  $border"
+    Write-Output ""
+}
+
 function ShowConsole($m) {
     Write-Output ""
     $border = [string]::new([char]0x2588, ($m.Size + 2) * 2)
@@ -1119,7 +1185,8 @@ function New-QRCode {
     }
     
     if ($Symbol -eq 'rMQR') {
-        $ecUse = if ($ECLevel -eq 'H') { 'H' } else { 'M' }
+        if ($ECLevel -ne 'M' -and $ECLevel -ne 'H') { throw "rMQR solo admite ECLevel 'M' o 'H'" }
+        $ecUse = $ECLevel
         $rawBits = New-Object System.Collections.ArrayList
         foreach ($b in [Text.Encoding]::UTF8.GetBytes($Data)) { for ($i = 7; $i -ge 0; $i--) { [void]$rawBits.Add([int](($b -shr $i) -band 1)) } }
         $ordered = ($script:RMQR_SPEC.GetEnumerator() | Sort-Object { $_.Value.H } , { $_.Value.W })
@@ -1249,41 +1316,14 @@ function New-QRCode {
         }
         Write-Status "Version: R$h`x$w"
         Write-Status "EC: $ecUse"
+        $cap = $script:RMQR_CAP[$chosenKey][$ecUse]
+        Write-Status "Capacidades (aprox) N/A/B/K: $($cap.N)/$($cap.A)/$($cap.B)/$($cap.K)"
         $sw.Stop()
         if ($ShowConsole) {
-            Write-Output ""
-            $border = [string]::new([char]0x2588, ($m.Width + 2) * 2)
-            Write-Output "  $border"
-            for ($r = 0; $r -lt $m.Height; $r++) {
-                $line = "  " + [char]0x2588 + [char]0x2588
-                for ($c = 0; $c -lt $m.Width; $c++) {
-                    $line += if ($m.Mod["$r,$c"] -eq 1) { "  " } else { [string]::new([char]0x2588, 2) }
-                }
-                Write-Output "$line$([char]0x2588)$([char]0x2588)"
-            }
-            Write-Output "  $border"
-            Write-Output ""
+            ShowConsoleRect $m
         }
         if ($OutputPath -and $PSCmdlet.ShouldProcess($OutputPath, "Exportar PNG")) {
-            Add-Type -AssemblyName System.Drawing
-            $imgW = ($m.Width + 8) * $ModuleSize
-            $imgH = ($m.Height + 8) * $ModuleSize
-            $bmp = New-Object Drawing.Bitmap $imgW, $imgH
-            $g = [Drawing.Graphics]::FromImage($bmp)
-            $g.Clear([Drawing.Color]::White)
-            $black = [Drawing.Brushes]::Black
-            for ($r = 0; $r -lt $m.Height; $r++) {
-                for ($c = 0; $c -lt $m.Width; $c++) {
-                    if ($m.Mod["$r,$c"] -eq 1) {
-                        $x = ($c + 4) * $ModuleSize
-                        $y = ($r + 4) * $ModuleSize
-                        $g.FillRectangle($black, $x, $y, $ModuleSize, $ModuleSize)
-                    }
-                }
-            }
-            $g.Dispose()
-            $bmp.Save($OutputPath, [Drawing.Imaging.ImageFormat]::Png)
-            $bmp.Dispose()
+            ExportPngRect $m $OutputPath $ModuleSize 4
         }
         return $m
     }

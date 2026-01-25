@@ -56,6 +56,12 @@ M2 Alfanumérico	MICRO_M2	M2	.\QRCode.ps1 -Data "ABC123" -Symbol "Micro" -MicroV
 M3 Kanji	MICRO_M3	M3	.\QRCode.ps1 -Data "東京" -Symbol "Micro" -MicroVersion "M3" -ECLevel "L" -OutputPath "qr_micro_m3_kanji.png"
 M4 Alfanumérico Q	MICRO_M4	M4	.\QRCode.ps1 -Data "POWER123" -Symbol "Micro" -MicroVersion "M4" -ECLevel "Q" -OutputPath "qr_micro_m4_q.png"
 
+# rMQR ejemplos
+HELLO rMQR M	RMQR_SIMPLE	R7x43-M	.\QRCode.ps1 -Data "HELLO" -Symbol "rMQR" -ECLevel "M" -OutputPath "rmqr_hello_m.png"
+Texto corto rMQR H	RMQR_SIMPLE	R7x77-H	.\QRCode.ps1 -Data "Rectangular QR" -Symbol "rMQR" -ECLevel "H" -OutputPath "rmqr_texto_h.png"
+Payload medio rMQR M	RMQR_MEDIO	R9x99-M	.\QRCode.ps1 -Data "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" -Symbol "rMQR" -ECLevel "M" -OutputPath "rmqr_med_m.png"
+Payload grande rMQR H	RMQR_GRANDE	R17x139-H	.\QRCode.ps1 -Data "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" -Symbol "rMQR" -ECLevel "H" -OutputPath "rmqr_big_h.png"
+
 # GS1 FNC1 casos reales adicionales
 GS1 GTIN+Fecha+Lote+Serial	GS1	Modelo2-FNC1-Primero	.\QRCode.ps1 -Data "01123456789012311726010110LOT1234521SERIAL12345" -Fnc1First -OutputPath "qr_gs1_full.png"
 GS1 Segundo Posición Indicador 12	GS1_SEGUNDO	Modelo2-FNC1-Segundo	.\QRCode.ps1 -Data "990123456789012345" -Fnc1Second -Fnc1ApplicationIndicator 12 -OutputPath "qr_gs1_segundo_12.png"

@@ -71,6 +71,10 @@ C:\Users\[USERNAME]\AppData\Local\Microsoft\WindowsApps\pwsh.exe -NoProfile .\QR
 
 # Micro QR (auto)
 .\\QRCode.ps1 -Data "Micro" -Symbol "Micro" -MicroVersion "AUTO" -OutputPath "micro.png"
+
+# rMQR (Rectangular Micro QR)
+.\QRCode.ps1 -Data "HELLO" -Symbol "rMQR" -ECLevel "M" -OutputPath "rmqr_hello_m.png"
+.\QRCode.ps1 -Data "Rectangular QR" -Symbol "rMQR" -ECLevel "H" -OutputPath "rmqr_texto_h.png"
 ```
 
 #### Ejemplos adicionales

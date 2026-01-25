@@ -239,20 +239,20 @@ Paridad: 8 bits (XOR de datos)
 ## 🎯 Prioridades de Implementación
 
 ### **Prioridad Alta** 🔴
-1. **Micro QR Code**: Demanda industrial alta
-2. **rMQR**: Estándar ISO reciente (2022)
-3. **GS1 QR Code**: Esencial para comercio
-4. **FNC1 Mode**: Requerido para GS1
+1. **Micro QR Code**: ✅ Implementado
+2. **rMQR**: ✅ Implementado
+3. **GS1 QR Code**: ✅ Implementado
+4. **FNC1 Mode**: ✅ Implementado
 
 ### **Prioridad Media** 🟡
-1. **QR Code Model 1**: Compatibilidad histórica
-2. **SQRC**: Aplicaciones de seguridad
-3. **iQR Code**: Casos especializados
-4. **Structured Append**: Datos grandes
+1. **QR Code Model 1**: ✅ Implementado
+2. **Structured Append**: ✅ Implementado
+3. **SQRC**: ❌ Faltante (Aplicaciones de seguridad)
+4. **iQR Code**: ❌ Faltante (Casos especializados)
 
 ### **Prioridad Baja** 🟢
-1. **FrameQR**: Principalmente estético
-2. **HCC2D**: Experimental/prototipo
+1. **FrameQR**: ❌ Faltante (Principalmente estético)
+2. **HCC2D**: ❌ Faltante (Experimental/prototipo)
 
 ---
 
@@ -265,10 +265,12 @@ Paridad: 8 bits (XOR de datos)
 - ✅ **Implementado**: Reed-Solomon completo
 
 ### **Anexo C**: Algoritmo de Decodificación de Referencia
-- ❌ **Faltante**: Solo generación, no decodificación
+- ✅ **Implementado**: Lectura de formato (EC/máscara), desmascarado y extracción de datos para **QR Modelo 2**. Soporta segmentos Numérico, Alfanumérico, Byte (UTF-8), Kanji (Shift-JIS), ECI, FNC1 y Structured Append.
+- ℹ️ **Alcance**: Decodificación de referencia para validación; no incluye reconstrucción RS ni rMQR.
 
 ### **Anexo D**: Parámetros de Calidad de Producción
-- ❌ **Faltante**: Métricas de calidad de impresión
+- ✅ **Implementado**: Métricas de densidad de módulos oscuros, conteo de bloques 2×2 y recomendación de quiet zone mínima.
+- ℹ️ **Uso**: Disponible vía flag `-QualityReport` en CLI.
 
 ### **Anexo E**: Micro QR Code
 - ✅ **Implementado**: Especificación completa M1-M4
@@ -277,15 +279,7 @@ Paridad: 8 bits (XOR de datos)
 - ✅ **Implementado**: Modo de múltiples símbolos soportado
 
 ### **Anexo G**: Ejemplos de Codificación
-- ✅ **Implementado**: Ejemplos disponibles en documentación
-
-### **Anexo C**: Algoritmo de Decodificación de Referencia
-- ✅ **Implementado**: Lectura de formato (EC/máscara), desmascarado y extracción de datos para **QR Modelo 2**. Soporta segmentos Numérico, Alfanumérico, Byte (UTF-8), Kanji (Shift-JIS), ECI, FNC1 y Structured Append.
-- ℹ️ **Alcance**: Decodificación de referencia para validación; no incluye reconstrucción RS ni rMQR.
-
-### **Anexo D**: Parámetros de Calidad de Producción
-- ✅ **Implementado**: Métricas de densidad de módulos oscuros, conteo de bloques 2×2 y recomendación de quiet zone mínima.
-- ℹ️ **Uso**: Disponible vía flag `-QualityReport` en CLI.
+- ✅ **Implementado**: Ejemplos disponibles en documentación (lista_inputs.tsv)
 
 ---
 
@@ -321,21 +315,24 @@ Paridad: 8 bits (XOR de datos)
 
 ## 💡 Recomendaciones
 
-### **Implementación Inmediata**
-1. **FNC1 Mode**: Crítico para adopción comercial
-2. **GS1 QR Code**: Estándar industrial esencial
-3. **Micro QR Code**: Alta demanda en IoT/electrónicos
+### **Implementación Completada**
+1. **FNC1 Mode / GS1**: ✅ Implementado y validado.
+2. **Micro QR Code**: ✅ Implementado (M1-M4).
+3. **rMQR**: ✅ Implementado (27 versiones rectangulares).
+4. **QR Code Model 1**: ✅ Implementado para compatibilidad histórica.
+5. **Decodificación de Referencia**: ✅ Implementada para validación de Modelo 2.
+6. **Reporte de Calidad**: ✅ Implementado (densidad, bloques 2x2, quiet zone).
 
 ### **Investigación Requerida**
-1. **SQRC**: Especificaciones de encriptación no públicas
-2. **iQR Code**: Documentación técnica limitada
-3. **rMQR**: Complejidad de algoritmos rectangulares
+1. **SQRC**: Especificaciones de encriptación no públicas (Denso Wave).
+2. **iQR Code**: Documentación técnica limitada y complejidad de reconstrucción.
+3. **FrameQR**: Integración de marcos y logos sin comprometer la legibilidad.
 
-### **Consideraciones Técnicas**
-- Mantener compatibilidad con implementación actual
-- Modularizar código para diferentes variantes
-- Implementar detección automática de formato óptimo
-- Considerar impacto en rendimiento
+### **Mejoras Técnicas Realizadas**
+- ✅ **Modo AUTO**: Selección automática de la simbología más eficiente (Micro -> QR -> rMQR).
+- ✅ **Modularización**: Estructura de código preparada para nuevas variantes.
+- ✅ **Visualización**: Función `ShowConsole` compatible con todas las variantes.
+- ✅ **Batch Processing**: Procesamiento masivo vía `lista_inputs.tsv`.
 
 ---
 

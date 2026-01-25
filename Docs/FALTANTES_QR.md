@@ -15,7 +15,7 @@ El generador actual implementa **QR Code Model 1 y Model 2** según ISO/IEC 1800
 |:---|:---:|:---|:---:|:---:|
 | **QR Code Model 1** | ✅ | ISO/IEC 18004:2000 | 🟡 Media | 🟢 Baja |
 | **Micro QR Code** | ✅ | ISO/IEC 18004 Anexo | 🔴 Alta | 🟡 Media |
-| **rMQR (Rectangular)** | ❌ | ISO/IEC 23941:2022 | 🔴 Alta | 🔴 Alta |
+| **rMQR (Rectangular)** | ✅ | ISO/IEC 23941:2022 | 🔴 Alta | 🔴 Alta |
 | **SQRC (Secure QR)** | ❌ | Propietario Denso | 🟡 Media | 🔴 Alta |
 | **FrameQR** | ❌ | Propietario Denso | 🟢 Baja | 🟡 Media |
 | **iQR Code** | ❌ | Propietario Denso | 🟡 Media | 🔴 Alta |
@@ -79,9 +79,12 @@ El generador actual implementa **QR Code Model 1 y Model 2** según ISO/IEC 1800
 
 ---
 
-### 3. **rMQR (Rectangular Micro QR)** ❌
+### 3. **rMQR (Rectangular Micro QR)** ✅
 **Estándar**: ISO/IEC 23941:2022  
 **Prioridad**: 🔴 Alta | **Complejidad**: 🔴 Alta
+
+#### Estado:
+Implementado experimentalmente. Soporta versiones R7x43 a R17x139.
 
 #### Características:
 - **Forma rectangular** (no cuadrada)
@@ -268,38 +271,38 @@ Paridad: 8 bits (XOR de datos)
 - ❌ **Faltante**: Métricas de calidad de impresión
 
 ### **Anexo E**: Micro QR Code
-- ❌ **Faltante**: Especificación completa
+- ✅ **Implementado**: Especificación completa M1-M4
 
 ### **Anexo F**: Structured Append
-- ❌ **Faltante**: Modo de múltiples símbolos
+- ✅ **Implementado**: Modo de múltiples símbolos soportado
 
 ### **Anexo G**: Ejemplos de Codificación
-- ✅ **Parcial**: Algunos ejemplos implementados
+- ✅ **Implementado**: Ejemplos disponibles en documentación
 
 ---
 
 ## 🛠️ Roadmap de Implementación
 
-### **Fase 1: Compatibilidad Comercial** (2-3 meses)
-- [ ] FNC1 Mode (Modos 5 y 9)
-- [ ] GS1 QR Code con Application Identifiers
-- [ ] Structured Append básico
-- [ ] Validación de datos GS1
+### **Fase 1: Compatibilidad Comercial** (Completado)
+- [x] FNC1 Mode (Modos 5 y 9)
+- [x] GS1 QR Code con Application Identifiers
+- [x] Structured Append básico
+- [x] Validación de datos GS1
 
-### **Fase 2: Variantes Compactas** (3-4 meses)
+### **Fase 2: Variantes Compactas** (Completado)
 - [x] Micro QR Code (M1-M4)
-- [ ] Optimización para espacios pequeños
-- [ ] Detección automática de tamaño óptimo
-- [ ] Exportación multi-formato
+- [x] Optimización para espacios pequeños
+- [x] Detección automática de tamaño óptimo
+- [x] Exportación multi-formato (PNG y SVG)
 
-### **Fase 3: Formatos Avanzados** (4-6 meses)
-- [ ] rMQR (Rectangular Micro QR)
-- [ ] 27 versiones rectangulares
-- [ ] Algoritmos de optimización de forma
-- [ ] Compatibilidad con espacios 1D
+### **Fase 3: Formatos Avanzados** (Completado)
+- [x] rMQR (Rectangular Micro QR)
+- [x] 27 versiones rectangulares
+- [x] Algoritmos de optimización de forma
+- [x] Compatibilidad con espacios 1D
 
-### **Fase 4: Características Especializadas** (6+ meses)
-- [ ] QR Code Model 1 (compatibilidad histórica)
+### **Fase 4: Características Especializadas** (En progreso)
+- [x] QR Code Model 1 (compatibilidad histórica)
 - [ ] SQRC (investigación de encriptación)
 - [ ] FrameQR (integración de diseño)
 - [ ] iQR Code (análisis de viabilidad)

@@ -35,7 +35,7 @@ pwsh -Version
 *   **Structured Append:** Soporte para Modo 3 con encabezado por símbolo.
 *   **FNC1 / GS1:** Soporte para modos 5 y 9 con Application Indicator.
 *   **Corrección de Errores (ECC):** Soporte total para niveles **L, M, Q y H**, garantizando legibilidad incluso en superficies dañadas.
-*   **Exportación Directa:** Genera archivos **PNG** nítidos con control total sobre el tamaño del módulo y bordes (quiet zone).
+*   **Exportación Directa:** Genera archivos **PNG** y **SVG** nítidos con control total sobre el tamaño del módulo y bordes (quiet zone).
 
 ---
 
@@ -54,8 +54,11 @@ C:\Users\[USERNAME]\AppData\Local\Microsoft\WindowsApps\pwsh.exe -NoProfile .\QR
 
 ### Uso Directo por CLI
 ```powershell
-# Generar un código simple
+# Generar un código simple (PNG por defecto)
 .\QRCode.ps1 -Data "Hola mundo" -OutputPath "demo.png"
+
+# Generar en formato vectorial (SVG)
+.\QRCode.ps1 -Data "Hola mundo" -OutputPath "demo.svg"
 
 # Con personalización avanzada
 .\QRCode.ps1 -Data "Mi Texto" -ECLevel "H" -ModuleSize 15 -OutputPath "personalizado.png"
@@ -118,6 +121,7 @@ El script puede procesar múltiples entradas automáticamente:
 | :--- | :--- |
 | `ArchivoEntrada` | Ruta al archivo con los textos a procesar. |
 | `CarpetaSalida` | Directorio donde se guardarán las imágenes. |
+| `FormatoSalida` | Formato de archivo: `png` o `svg`. |
 | `NivelEC` | Nivel de recuperación (L, M, Q, H). |
 | `TamanoModulo` | Tamaño en píxeles de cada cuadro (punto) del QR. |
 | `Version` | Versión fija (1-40) o `0` para automático. |

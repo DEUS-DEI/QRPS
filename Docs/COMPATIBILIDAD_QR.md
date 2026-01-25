@@ -25,8 +25,8 @@ Este generador de códigos QR implementa una **solución 100% nativa en PowerShe
 | **Codificación UTF-8** | ✅ | ECI 26 automático | Soporte internacional |
 | **Structured Append** | ✅ | ISO/IEC 18004 | Modo 3 habilitado |
 | **FNC1 / GS1** | ✅ | ISO/IEC 18004 / GS1 | Modos 5 y 9 habilitados |
-| **Micro QR / rMQR** | 🟡 | ISO/IEC 18004 / ISO/IEC 23941 | Micro QR disponible / rMQR no |
-| **Exportación PNG** | ✅ | Escalado configurable | Formato estándar |
+| **Micro QR / rMQR** | 🟡 | ISO/IEC 18004 / ISO/IEC 23941 | Micro QR disponible / rMQR disponible (experimental) |
+| **Exportación PNG/SVG** | ✅ | Escalado configurable | Formatos raster y vectorial |
 
 ---
 

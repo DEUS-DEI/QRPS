@@ -110,6 +110,44 @@ $DATA_CW_TABLE = @(
 $script:SPEC = @{}
 $script:CAP = @{}
 $script:ALIGN = @{}
+$script:RMQR_FMT_MASKS = @{
+    TL = @(0,1,1,1,1,1,1,0,1,0,1,0,1,1,0,0,1,0)
+    BR = @(1,0,0,0,0,0,1,0,1,0,0,1,1,1,1,0,1,1)
+}
+$script:RMQR_SPEC = @{
+    'R7x43'  = @{ VI=0;  H=7;  W=43;  M=@{D=6;  E=7};  H2=@{D=3;  E=10} }
+    'R7x59'  = @{ VI=1;  H=7;  W=59;  M=@{D=12; E=9};  H2=@{D=7;  E=14} }
+    'R7x77'  = @{ VI=2;  H=7;  W=77;  M=@{D=20; E=12}; H2=@{D=10; E=22} }
+    'R7x99'  = @{ VI=3;  H=7;  W=99;  M=@{D=28; E=16}; H2=@{D=14; E=30} }
+    'R7x139' = @{ VI=4;  H=7;  W=139; M=@{D=44; E=24}; H2=@{D=24; E=44} }
+    'R9x43'  = @{ VI=5;  H=9;  W=43;  M=@{D=12; E=9};  H2=@{D=7;  E=14} }
+    'R9x59'  = @{ VI=6;  H=9;  W=59;  M=@{D=21; E=12}; H2=@{D=11; E=22} }
+    'R9x77'  = @{ VI=7;  H=9;  W=77;  M=@{D=31; E=18}; H2=@{D=17; E=32} }
+    'R9x99'  = @{ VI=8;  H=9;  W=99;  M=@{D=42; E=24}; H2=@{D=22; E=44} }
+    'R9x139' = @{ VI=9;  H=9;  W=139; M=@{D=63; E=36}; H2=@{D=33; E=66} }
+    'R11x27' = @{ VI=10; H=11; W=27;  M=@{D=7;  E=8};  H2=@{D=5;  E=10} }
+    'R11x43' = @{ VI=11; H=11; W=43;  M=@{D=19; E=12}; H2=@{D=11; E=20} }
+    'R11x59' = @{ VI=12; H=11; W=59;  M=@{D=31; E=16}; H2=@{D=15; E=32} }
+    'R11x77' = @{ VI=13; H=11; W=77;  M=@{D=43; E=24}; H2=@{D=23; E=44} }
+    'R11x99' = @{ VI=14; H=11; W=99;  M=@{D=57; E=32}; H2=@{D=29; E=60} }
+    'R11x139'= @{ VI=15; H=11; W=139; M=@{D=84; E=48}; H2=@{D=42; E=90} }
+    'R13x27' = @{ VI=16; H=13; W=27;  M=@{D=12; E=9};  H2=@{D=7;  E=14} }
+    'R13x43' = @{ VI=17; H=13; W=43;  M=@{D=27; E=14}; H2=@{D=13; E=28} }
+    'R13x59' = @{ VI=18; H=13; W=59;  M=@{D=38; E=22}; H2=@{D=20; E=40} }
+    'R13x77' = @{ VI=19; H=13; W=77;  M=@{D=53; E=32}; H2=@{D=29; E=56} }
+    'R13x99' = @{ VI=20; H=13; W=99;  M=@{D=73; E=40}; H2=@{D=35; E=78} }
+    'R13x139'= @{ VI=21; H=13; W=139; M=@{D=106;E=60}; H2=@{D=54; E=112} }
+    'R15x43' = @{ VI=22; H=15; W=43;  M=@{D=33; E=18}; H2=@{D=15; E=36} }
+    'R15x59' = @{ VI=23; H=15; W=59;  M=@{D=48; E=26}; H2=@{D=26; E=48} }
+    'R15x77' = @{ VI=24; H=15; W=77;  M=@{D=67; E=36}; H2=@{D=31; E=72} }
+    'R15x99' = @{ VI=25; H=15; W=99;  M=@{D=88; E=48}; H2=@{D=48; E=88} }
+    'R15x139'= @{ VI=26; H=15; W=139; M=@{D=127;E=72}; H2=@{D=69; E=130} }
+    'R17x43' = @{ VI=27; H=17; W=43;  M=@{D=39; E=22}; H2=@{D=21; E=40} }
+    'R17x59' = @{ VI=28; H=17; W=59;  M=@{D=56; E=32}; H2=@{D=28; E=60} }
+    'R17x77' = @{ VI=29; H=17; W=77;  M=@{D=78; E=44}; H2=@{D=38; E=84} }
+    'R17x99' = @{ VI=30; H=17; W=99;  M=@{D=100;E=60}; H2=@{D=56; E=104} }
+    'R17x139'= @{ VI=31; H=17; W=139; M=@{D=152;E=80}; H2=@{D=76; E=156} }
+}
 
 for ($v = 1; $v -le 40; $v++) {
     $script:CAP[$v] = @{}
@@ -1083,40 +1121,81 @@ function New-QRCode {
     if ($Symbol -eq 'rMQR') {
         $ecUse = if ($ECLevel -eq 'H') { 'H' } else { 'M' }
         $rawBits = New-Object System.Collections.ArrayList
-        foreach ($b in [Text.Encoding]::UTF8.GetBytes($Data)) {
-            for ($i = 7; $i -ge 0; $i--) { [void]$rawBits.Add([int](($b -shr $i) -band 1)) }
+        foreach ($b in [Text.Encoding]::UTF8.GetBytes($Data)) { for ($i = 7; $i -ge 0; $i--) { [void]$rawBits.Add([int](($b -shr $i) -band 1)) } }
+        $ordered = ($script:RMQR_SPEC.GetEnumerator() | Sort-Object { $_.Value.H } , { $_.Value.W })
+        $chosenKey = $null
+        foreach ($kv in $ordered) {
+            $ver = $kv.Key; $spec = $kv.Value
+            $de = if ($ecUse -eq 'H') { $spec.H2 } else { $spec.M }
+            $capBitsDataTmp = $de.D * 8
+            if ($capBitsDataTmp -ge $rawBits.Count) { $chosenKey = $ver; break }
         }
-        $sizes = @(@(7,43),@(7,59),@(7,77),@(7,99),@(7,139),@(9,43),@(9,59),@(9,77),@(9,99),@(9,139),@(11,43),@(11,59),@(11,77),@(11,99),@(11,139),@(13,59),@(13,77),@(13,99),@(15,59),@(15,77),@(15,99),@(17,59),@(17,77),@(17,99),@(17,139))
-        $chosen = $null
-        foreach ($sz in $sizes) {
-            $h = $sz[0]; $w = $sz[1]
-            $mTmp = @{}
-            $mTmp.Height = $h
-            $mTmp.Width = $w
-            $mTmp.Mod = @{}
-            $mTmp.Func = @{}
-            for ($r = 0; $r -lt $h; $r++) { for ($c = 0; $c -lt $w; $c++) { $mTmp.Mod["$r,$c"]=0; $mTmp.Func["$r,$c"]=$false } }
-            for ($dy = -1; $dy -le 7; $dy++) { for ($dx = -1; $dx -le 7; $dx++) { $r = 0 + $dy; $c = 0 + $dx; if ($r -lt 0 -or $c -lt 0 -or $r -ge $h -or $c -ge $w) { continue } $in = $dy -ge 0 -and $dy -le 6 -and $dx -ge 0 -and $dx -le 6; if (-not $in) { $mTmp.Func["$r,$c"]=$true; $mTmp.Mod["$r,$c"]=0; continue } $on = $dy -eq 0 -or $dy -eq 6 -or $dx -eq 0 -or $dx -eq 6; $cent = $dy -ge 2 -and $dy -le 4 -and $dx -ge 2 -and $dx -le 4; $mTmp.Func["$r,$c"]=$true; $mTmp.Mod["$r,$c"]=([int]($on -or $cent)) } }
-            for ($dy = -1; $dy -le 7; $dy++) { for ($dx = -1; $dx -le 7; $dx++) { $r = ($h - 7) + $dy; $c = ($w - 7) + $dx; if ($r -lt 0 -or $c -lt 0 -or $r -ge $h -or $c -ge $w) { continue } $in = $dy -ge 0 -and $dy -le 6 -and $dx -ge 0 -and $dx -le 6; if (-not $in) { $mTmp.Func["$r,$c"]=$true; $mTmp.Mod["$r,$c"]=0; continue } $on = $dy -eq 0 -or $dy -eq 6 -or $dx -eq 0 -or $dx -eq 6; $cent = $dy -ge 2 -and $dy -le 4 -and $dx -ge 2 -and $dx -le 4; $mTmp.Func["$r,$c"]=$true; $mTmp.Mod["$r,$c"]=([int]($on -or $cent)) } }
-            for ($c = 7; $c -lt $w; $c++) { $v = ($c % 2) -eq 0; if (-not $mTmp.Func["6,$c"]) { $mTmp.Func["6,$c"]=$true; $mTmp.Mod["6,$c"]=[int]$v } }
-            for ($r = 7; $r -lt $h; $r++) { $v = ($r % 2) -eq 0; if (-not $mTmp.Func["$r,6"]) { $mTmp.Func["$r,6"]=$true; $mTmp.Mod["$r,6"]=[int]$v } }
-            $free = 0
-            for ($r = 0; $r -lt $h; $r++) { for ($c = 0; $c -lt $w; $c++) { if (-not $mTmp.Func["$r,$c"]) { $free++ } } }
-            if ($free -ge $rawBits.Count) { $chosen = $sz; break }
-        }
-        if ($null -eq $chosen) { throw "Datos muy largos para rMQR" }
-        $h = $chosen[0]; $w = $chosen[1]
+        if (-not $chosenKey) { throw "Datos muy largos para rMQR" }
+        $spec = $script:RMQR_SPEC[$chosenKey]
+        $h = $spec.H; $w = $spec.W
         $m = @{}
-        $m.Height = $h
-        $m.Width = $w
-        $m.Mod = @{}
-        $m.Func = @{}
+        $m.Height = $h; $m.Width = $w; $m.Mod=@{}; $m.Func=@{}
         for ($r = 0; $r -lt $h; $r++) { for ($c = 0; $c -lt $w; $c++) { $m.Mod["$r,$c"]=0; $m.Func["$r,$c"]=$false } }
-        for ($dy = -1; $dy -le 7; $dy++) { for ($dx = -1; $dx -le 7; $dx++) { $r = 0 + $dy; $c = 0 + $dx; if ($r -lt 0 -or $c -lt 0 -or $r -ge $h -or $c -ge $w) { continue } $in = $dy -ge 0 -and $dy -le 6 -and $dx -ge 0 -and $dx -le 6; if (-not $in) { $m.Func["$r,$c"]=$true; $m.Mod["$r,$c"]=0; continue } $on = $dy -eq 0 -or $dy -eq 6 -or $dx -eq 0 -or $dx -eq 6; $cent = $dy -ge 2 -and $dy -le 4 -and $dx -ge 2 -and $dx -le 4; $m.Func["$r,$c"]=$true; $m.Mod["$r,$c"]=([int]($on -or $cent)) } }
-        for ($dy = -1; $dy -le 7; $dy++) { for ($dx = -1; $dx -le 7; $dx++) { $r = ($h - 7) + $dy; $c = ($w - 7) + $dx; if ($r -lt 0 -or $c -lt 0 -or $r -ge $h -or $c -ge $w) { continue } $in = $dy -ge 0 -and $dy -le 6 -and $dx -ge 0 -and $dx -le 6; if (-not $in) { $m.Func["$r,$c"]=$true; $m.Mod["$r,$c"]=0; continue } $on = $dy -eq 0 -or $dy -eq 6 -or $dx -eq 0 -or $dx -eq 6; $cent = $dy -ge 2 -and $dy -le 4 -and $dx -ge 2 -and $dx -le 4; $m.Func["$r,$c"]=$true; $m.Mod["$r,$c"]=([int]($on -or $cent)) } }
+        for ($dy = -1; $dy -le 7; $dy++) { for ($dx = -1; $dx -le 7; $dx++) { $rr = 0 + $dy; $cc = 0 + $dx; if ($rr -lt 0 -or $cc -lt 0 -or $rr -ge $h -or $cc -ge $w) { continue } $in = $dy -ge 0 -and $dy -le 6 -and $dx -ge 0 -and $dx -le 6; if (-not $in) { $m.Func["$rr,$cc"]=$true; $m.Mod["$rr,$cc"]=0; continue } $on = $dy -eq 0 -or $dy -eq 6 -or $dx -eq 0 -or $dx -eq 6; $cent = $dy -ge 2 -and $dy -le 4 -and $dx -ge 2 -and $dx -le 4; $m.Func["$rr,$cc"]=$true; $m.Mod["$rr,$cc"]=([int]($on -or $cent)) } }
+        for ($dy = -1; $dy -le 7; $dy++) { for ($dx = -1; $dx -le 7; $dx++) { $rr = ($h - 7) + $dy; $cc = ($w - 7) + $dx; if ($rr -lt 0 -or $cc -lt 0 -or $rr -ge $h -or $cc -ge $w) { continue } $in = $dy -ge 0 -and $dy -le 6 -and $dx -ge 0 -and $dx -le 6; if (-not $in) { $m.Func["$rr,$cc"]=$true; $m.Mod["$rr,$cc"]=0; continue } $on = $dy -eq 0 -or $dy -eq 6 -or $dx -eq 0 -or $dx -eq 6; $cent = $dy -ge 2 -and $dy -le 4 -and $dx -ge 2 -and $dx -le 4; $m.Func["$rr,$cc"]=$true; $m.Mod["$rr,$cc"]=([int]($on -or $cent)) } }
         for ($c = 7; $c -lt $w; $c++) { $v = ($c % 2) -eq 0; if (-not $m.Func["6,$c"]) { $m.Func["6,$c"]=$true; $m.Mod["6,$c"]=[int]$v } }
         for ($r = 7; $r -lt $h; $r++) { $v = ($r % 2) -eq 0; if (-not $m.Func["$r,6"]) { $m.Func["$r,6"]=$true; $m.Mod["$r,6"]=[int]$v } }
-        $bits = $rawBits
+        $de = if ($ecUse -eq 'H') { $spec.H2 } else { $spec.M }
+        $capacityBits = $de.D * 8
+        $bits = New-Object System.Collections.ArrayList
+        [void]$bits.AddRange($rawBits)
+        if ($bits.Count -gt $capacityBits) { throw "Datos exceden capacidad rMQR" }
+        $term = [Math]::Min(4, $capacityBits - $bits.Count)
+        for ($i = 0; $i -lt $term; $i++) { [void]$bits.Add(0) }
+        while ($bits.Count % 8 -ne 0) { [void]$bits.Add(0) }
+        $pads = @(236,17); $pi = 0
+        while ($bits.Count -lt $capacityBits) { $pb = $pads[$pi]; $pi = 1 - $pi; for ($b = 7; $b -ge 0; $b--) { [void]$bits.Add([int](($pb -shr $b) -band 1)) } }
+        $dataCW = @()
+        for ($i = 0; $i -lt $bits.Count; $i += 8) { $byte = 0; for ($j = 0; $j -lt 8; $j++) { $byte = ($byte -shl 1) -bor $bits[$i+$j] } $dataCW += $byte }
+        $eccLen = $de.E
+        $blocks = 1
+        if ($eccLen -ge 36 -and $eccLen -lt 80) { $blocks = 2 } elseif ($eccLen -ge 80) { $blocks = 4 }
+        $dataBlocks = @()
+        $ecBlocks = @()
+        if ($blocks -gt 1) {
+            $baseData = [Math]::Floor($dataCW.Count / $blocks)
+            $remData = $dataCW.Count % $blocks
+            $baseEC = [Math]::Floor($eccLen / $blocks)
+            $remEC = $eccLen % $blocks
+            $start = 0
+            for ($bix=0; $bix -lt $blocks; $bix++) {
+                $dLen = $baseData + (if ($bix -lt $remData) { 1 } else { 0 })
+                $chunk = if ($dLen -gt 0) { $dataCW[$start..($start+$dLen-1)] } else { @() }
+                $start += $dLen
+                $eLen = $baseEC + (if ($bix -lt $remEC) { 1 } else { 0 })
+                $ecChunk = if ($eLen -gt 0 -and $chunk.Count -gt 0) { GetEC $chunk $eLen } else { @() }
+                $dataBlocks += ,$chunk
+                $ecBlocks += ,$ecChunk
+            }
+            $allCWData = @()
+            $maxD = ($dataBlocks | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
+            for ($i=0; $i -lt $maxD; $i++) {
+                for ($bix=0; $bix -lt $blocks; $bix++) {
+                    $blk = $dataBlocks[$bix]
+                    if ($i -lt $blk.Count) { $allCWData += $blk[$i] }
+                }
+            }
+            $allCWEC = @()
+            $maxE = ($ecBlocks | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
+            for ($i=0; $i -lt $maxE; $i++) {
+                for ($bix=0; $bix -lt $blocks; $bix++) {
+                    $blk = $ecBlocks[$bix]
+                    if ($i -lt $blk.Count) { $allCWEC += $blk[$i] }
+                }
+            }
+            $allCW = $allCWData + $allCWEC
+        } else {
+            $ecCW = GetEC $dataCW $eccLen
+            $allCW = $dataCW + $ecCW
+        }
+        $cwBits = New-Object System.Collections.ArrayList
+        foreach ($b in $allCW) { for ($i = 7; $i -ge 0; $i--) { [void]$cwBits.Add([int](($b -shr $i) -band 1)) } }
+        $bits = $cwBits
         $idx = 0
         $up = $true
         for ($right = $w - 1; $right -ge 1; $right -= 2) {
@@ -1133,6 +1212,40 @@ function New-QRCode {
                 }
             }
             $up = -not $up
+        }
+        for ($r = 0; $r -lt $h; $r++) { for ($c = 0; $c -lt $w; $c++) { if (-not $m.Func["$r,$c"]) { if ( (($r + $c) % 2) -eq 0 ) { $m.Mod["$r,$c"] = 1 - $m.Mod["$r,$c"] } } } }
+        $ecBit = if ($ecUse -eq 'H') { 1 } else { 0 }
+        $vi = $spec.VI
+        $fmt6 = @($ecBit,
+            [int](($vi -shr 4) -band 1),
+            [int](($vi -shr 3) -band 1),
+            [int](($vi -shr 2) -band 1),
+            [int](($vi -shr 1) -band 1),
+            [int]($vi -band 1))
+        $msg = $fmt6 + @(0,0,0,0,0,0,0,0,0,0,0,0)
+        $gen = @(1,1,1,1,1,0,0,1,0,0,1,0,1)
+        for ($i = 0; $i -lt 6; $i++) {
+            if ($msg[$i] -eq 1) {
+                for ($j = 0; $j -lt 13; $j++) { $msg[$i+$j] = $msg[$i+$j] -bxor $gen[$j] }
+            }
+        }
+        $parity = $msg[6..17]
+        $fmt = $fmt6 + $parity
+        $fmtTL = @()
+        for ($i=0;$i -lt 18;$i++){ $fmtTL += ($fmt[$i] -bxor $script:RMQR_FMT_MASKS.TL[$i]) }
+        $fmtBR = @()
+        for ($i=0;$i -lt 18;$i++){ $fmtBR += ($fmt[$i] -bxor $script:RMQR_FMT_MASKS.BR[$i]) }
+        for ($i=0;$i -lt 9;$i++){
+            $m.Func["7,$i"]=$true; $m.Mod["7,$i"]=$fmtTL[$i]
+        }
+        for ($i=9;$i -lt 18;$i++){
+            $m.Func["$($i-9),7"]=$true; $m.Mod["$($i-9),7"]=$fmtTL[$i]
+        }
+        for ($i=0;$i -lt 9;$i++){
+            $m.Func["$($h-8),$($w-1-$i)"]=$true; $m.Mod["$($h-8),$($w-1-$i)"]=$fmtBR[$i]
+        }
+        for ($i=9;$i -lt 18;$i++){
+            $m.Func["$($h-1-($i-9)),$($w-8)"]=$true; $m.Mod["$($h-1-($i-9)),$($w-8)"]=$fmtBR[$i]
         }
         Write-Status "Version: R$h`x$w"
         Write-Status "EC: $ecUse"

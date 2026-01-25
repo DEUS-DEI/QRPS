@@ -2,11 +2,9 @@
 
 ## Resumen Ejecutivo
 
-El generador actual implementa **QR Code Model 2** según ISO/IEC 18004, pero existen múltiples estándares, variantes y anexos adicionales que no están implementados. Este documento identifica las especificaciones faltantes y su relevancia para una implementación completa.
+El generador actual implementa **QR Code Model 1 y Model 2** según ISO/IEC 18004, pero existen múltiples estándares, variantes y anexos adicionales que no están implementados. Este documento identifica las especificaciones faltantes y su relevancia para una implementación completa.
 
 ### Faltantes Dentro de QR Model 2
-- **Structured Append** (Modo 3) no implementado
-- **FNC1/GS1** (Modos 5 y 9) no implementado
 - **Decodificación** no implementada (solo generación)
 
 ---
@@ -15,22 +13,22 @@ El generador actual implementa **QR Code Model 2** según ISO/IEC 18004, pero ex
 
 | **Estándar/Variante** | **Estado** | **Estándar ISO** | **Prioridad** | **Complejidad** |
 |:---|:---:|:---|:---:|:---:|
-| **QR Code Model 1** | ❌ | ISO/IEC 18004:2000 | 🟡 Media | 🟢 Baja |
+| **QR Code Model 1** | ✅ | ISO/IEC 18004:2000 | 🟡 Media | 🟢 Baja |
 | **Micro QR Code** | ❌ | ISO/IEC 18004 Anexo | 🔴 Alta | 🟡 Media |
 | **rMQR (Rectangular)** | ❌ | ISO/IEC 23941:2022 | 🔴 Alta | 🔴 Alta |
 | **SQRC (Secure QR)** | ❌ | Propietario Denso | 🟡 Media | 🔴 Alta |
 | **FrameQR** | ❌ | Propietario Denso | 🟢 Baja | 🟡 Media |
 | **iQR Code** | ❌ | Propietario Denso | 🟡 Media | 🔴 Alta |
-| **GS1 QR Code** | ❌ | GS1 General Spec | 🔴 Alta | 🟢 Baja |
-| **Structured Append** | ❌ | ISO/IEC 18004 | 🟡 Media | 🟡 Media |
-| **FNC1 Mode** | ❌ | ISO/IEC 18004 | 🔴 Alta | 🟢 Baja |
+| **GS1 QR Code** | ✅ | GS1 General Spec | 🔴 Alta | 🟢 Baja |
+| **Structured Append** | ✅ | ISO/IEC 18004 | 🟡 Media | 🟡 Media |
+| **FNC1 Mode** | ✅ | ISO/IEC 18004 | 🔴 Alta | 🟢 Baja |
 | **HCC2D (Prototype)** | ❌ | Experimental | 🟢 Baja | 🔴 Alta |
 
 ---
 
 ## 🔍 Análisis Detallado de Estándares Faltantes
 
-### 1. **QR Code Model 1** ❌
+### 1. **QR Code Model 1** ✅
 **Estándar**: ISO/IEC 18004:2000 (Retirado)  
 **Prioridad**: 🟡 Media | **Complejidad**: 🟢 Baja
 
@@ -47,14 +45,10 @@ El generador actual implementa **QR Code Model 2** según ISO/IEC 18004, pero ex
 - **Versiones**: V1-V14 únicamente
 - **Compatibilidad**: Lectores modernos pueden leer ambos
 
-#### Implementación Requerida:
-```powershell
-# Modificaciones necesarias:
-- Eliminar patrones de alineación para V2+
-- Ajustar tablas de capacidad (V1-V14)
-- Modificar estructura de regiones funcionales
-- Mantener compatibilidad con lectores actuales
-```
+#### Implementación:
+- Soporte de versiones V1-V14
+- Eliminación de patrones de alineación
+- Compatibilidad con lectores modernos
 
 ---
 
@@ -169,7 +163,7 @@ El generador actual implementa **QR Code Model 2** según ISO/IEC 18004, pero ex
 
 ---
 
-### 7. **GS1 QR Code** ❌
+### 7. **GS1 QR Code** ✅
 **Estándar**: GS1 General Specifications  
 **Prioridad**: 🔴 Alta | **Complejidad**: 🟢 Baja
 
@@ -191,19 +185,13 @@ FNC1 + (01)GTIN + (17)YYMMDD + (10)LOTE + (21)SERIAL
 - **(21)**: Número de serie
 - **(30)**: Cantidad variable
 
-#### Implementación Requerida:
-```powershell
-# Modo FNC1 (Indicador 5 = 0b0101)
-function Add-FNC1Mode {
-    param([string]$Data, [int]$Position = 1)
-    # Position 1: FNC1 al inicio
-    # Position 2: FNC1 con Application Indicator
-}
-```
+#### Implementación:
+- FNC1 primera o segunda posición
+- Datos GS1 provistos por el usuario con separador GS (ASCII 29)
 
 ---
 
-### 8. **Structured Append** ❌
+### 8. **Structured Append** ✅
 **Estándar**: ISO/IEC 18004 Modo 3  
 **Prioridad**: 🟡 Media | **Complejidad**: 🟡 Media
 
@@ -218,7 +206,7 @@ function Add-FNC1Mode {
 Modo: 0011 (4 bits)
 Posición del símbolo: 4 bits (0-15)
 Total de símbolos: 4 bits (1-16)
-Paridad: 8 bits (XOR de todos los datos)
+Paridad: 8 bits (XOR de datos)
 ```
 
 #### Casos de Uso:
@@ -229,7 +217,7 @@ Paridad: 8 bits (XOR de todos los datos)
 
 ---
 
-### 9. **FNC1 Mode** ❌
+### 9. **FNC1 Mode** ✅
 **Estándar**: ISO/IEC 18004 Modos 5 y 9  
 **Prioridad**: 🔴 Alta | **Complejidad**: 🟢 Baja
 
@@ -240,13 +228,8 @@ Paridad: 8 bits (XOR de todos los datos)
 - **Compatibilidad**: Sistemas de inventario y logística
 
 #### Implementación:
-```powershell
-# Modo 5: FNC1 Primera Posición
-[0101 : 4] + [Datos con formato GS1]
-
-# Modo 9: FNC1 Segunda Posición  
-[1001 : 4] + [Application Indicator : 8] + [Datos]
-```
+- Modo 5 y 9 habilitados
+- Application Indicator de 8 bits en modo 9
 
 ---
 

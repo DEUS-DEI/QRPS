@@ -18,6 +18,14 @@ param(
     [int]$Version = 0,
     [int]$ModuleSize = 10,
     [int]$EciValue = 0,
+    [ValidateSet('M1','M2')][string]$Model = 'M2',
+    [switch]$Fnc1First,
+    [switch]$Fnc1Second,
+    [int]$Fnc1ApplicationIndicator = 0,
+    [int]$StructuredAppendIndex = -1,
+    [int]$StructuredAppendTotal = 0,
+    [int]$StructuredAppendParity = -1,
+    [string]$StructuredAppendParityData = "",
     [switch]$ShowConsole
 )
 
@@ -172,6 +180,13 @@ function IsKanjiChar($ch) {
     return (($val -ge 0x8140 -and $val -le 0x9FFC) -or ($val -ge 0xE040 -and $val -le 0xEBBF))
 }
 
+function Get-StructuredAppendParity($txt) {
+    $bytes = [Text.Encoding]::UTF8.GetBytes($txt)
+    $par = 0
+    foreach ($b in $bytes) { $par = $par -bxor $b }
+    return $par
+}
+
 function Get-Segments($txt) {
     $segs = @()
     $len = $txt.Length
@@ -229,6 +244,9 @@ function Encode($segments, $ver, $ec) {
             'B'{[void]$bits.AddRange(@(0,1,0,0))}
             'K'{[void]$bits.AddRange(@(1,0,0,0))}
             'ECI'{[void]$bits.AddRange(@(0,1,1,1))}
+            'SA'{[void]$bits.AddRange(@(0,0,1,1))}
+            'F1'{[void]$bits.AddRange(@(0,1,0,1))}
+            'F2'{[void]$bits.AddRange(@(1,0,0,1))}
         }
         
         if ($mode -eq 'ECI') {
@@ -244,6 +262,25 @@ function Encode($segments, $ver, $ec) {
                  for ($b=20; $b -ge 0; $b--) { [void]$bits.Add([int](($val -shr $b) -band 1)) }
             }
             continue # Next segment
+        }
+        
+        if ($mode -eq 'SA') {
+            $idx = [int]$seg.Index
+            $total = [int]$seg.Total
+            $par = [int]$seg.Parity
+            $totalEnc = $total - 1
+            for ($b = 3; $b -ge 0; $b--) { [void]$bits.Add([int](($idx -shr $b) -band 1)) }
+            for ($b = 3; $b -ge 0; $b--) { [void]$bits.Add([int](($totalEnc -shr $b) -band 1)) }
+            for ($b = 7; $b -ge 0; $b--) { [void]$bits.Add([int](($par -shr $b) -band 1)) }
+            continue
+        }
+        
+        if ($mode -eq 'F1') { continue }
+        
+        if ($mode -eq 'F2') {
+            $app = [int]$seg.AppIndicator
+            for ($b = 7; $b -ge 0; $b--) { [void]$bits.Add([int](($app -shr $b) -band 1)) }
+            continue
         }
         
         # Character Count Indicator
@@ -476,7 +513,7 @@ function AddVersionInfo($m, $ver) {
     }
 }
 
-function InitM($ver) {
+function InitM($ver, $model) {
     $size = GetSize $ver
     $m = NewM $size
     
@@ -490,7 +527,7 @@ function InitM($ver) {
         if (-not (IsF $m $i 6)) { SetF $m $i 6 $v }
     }
     
-    if ($ver -ge 2 -and $script:ALIGN[$ver]) {
+    if ($model -ne 'M1' -and $ver -ge 2 -and $script:ALIGN[$ver]) {
         foreach ($row in $script:ALIGN[$ver]) {
             foreach ($col in $script:ALIGN[$ver]) {
                 $skip = ($row -lt 9 -and $col -lt 9) -or ($row -lt 9 -and $col -gt $size - 10) -or ($row -gt $size - 10 -and $col -lt 9)
@@ -743,25 +780,55 @@ function New-QRCode {
         [string]$OutputPath,
         [int]$ModuleSize = 10,
         [int]$EciValue = 0,
+        [ValidateSet('M1','M2')][string]$Model = 'M2',
+        [switch]$Fnc1First,
+        [switch]$Fnc1Second,
+        [int]$Fnc1ApplicationIndicator = 0,
+        [int]$StructuredAppendIndex = -1,
+        [int]$StructuredAppendTotal = 0,
+        [int]$StructuredAppendParity = -1,
+        [string]$StructuredAppendParityData = "",
         [switch]$ShowConsole
     )
     
     $sw = [Diagnostics.Stopwatch]::StartNew()
     
-    # 1. Segment Data
-    $segments = Get-Segments $Data
+    if ($Fnc1First -and $Fnc1Second) { throw "FNC1 solo admite primera o segunda posición" }
+    if ($Fnc1Second -and ($Fnc1ApplicationIndicator -lt 0 -or $Fnc1ApplicationIndicator -gt 255)) { throw "Fnc1ApplicationIndicator debe estar entre 0 y 255" }
+    if ($Model -eq 'M1' -and $Version -gt 14) { throw "Model 1 solo soporta versiones 1-14" }
+    
+    $useSA = ($StructuredAppendTotal -gt 0 -or $StructuredAppendIndex -ge 0 -or $StructuredAppendParity -ge 0)
+    if ($useSA) {
+        if ($StructuredAppendTotal -lt 1 -or $StructuredAppendTotal -gt 16) { throw "StructuredAppendTotal debe estar entre 1 y 16" }
+        if ($StructuredAppendIndex -lt 0 -or $StructuredAppendIndex -ge $StructuredAppendTotal) { throw "StructuredAppendIndex debe estar entre 0 y Total-1" }
+    }
+    
+    $dataSegments = Get-Segments $Data
+    $segments = @()
+    
+    if ($useSA) {
+        $paritySource = if ([string]::IsNullOrEmpty($StructuredAppendParityData)) { $Data } else { $StructuredAppendParityData }
+        $parity = if ($StructuredAppendParity -ge 0) { $StructuredAppendParity } else { Get-StructuredAppendParity $paritySource }
+        if ($parity -lt 0 -or $parity -gt 255) { throw "StructuredAppendParity debe estar entre 0 y 255" }
+        $segments += @{Mode='SA'; Index=$StructuredAppendIndex; Total=$StructuredAppendTotal; Parity=$parity}
+    }
+    
+    if ($Fnc1First) { $segments += @{Mode='F1'} }
+    elseif ($Fnc1Second) { $segments += @{Mode='F2'; AppIndicator=$Fnc1ApplicationIndicator} }
     
     if ($EciValue -gt 0) {
-        $segments = @(@{Mode='ECI'; Data="$EciValue"}) + $segments
+        $segments += @{Mode='ECI'; Data="$EciValue"}
     } else {
         $needsUtf8 = $false
-        foreach ($seg in $segments) {
+        foreach ($seg in $dataSegments) {
             if ($seg.Mode -eq 'B' -and $seg.Data -match '[^ -~]') { $needsUtf8 = $true; break }
         }
         if ($needsUtf8) {
-            $segments = @(@{Mode='ECI'; Data="26"}) + $segments
+            $segments += @{Mode='ECI'; Data="26"}
         }
     }
+    
+    $segments += $dataSegments
     
     # Display Segments info
     $modesStr = ($segments | ForEach-Object { $_.Mode }) -join "+"
@@ -770,7 +837,8 @@ function New-QRCode {
     # 2. Determine Version
     if ($Version -eq 0) {
         # Try versions 1 to 40
-        for ($v = 1; $v -le 40; $v++) {
+        $maxVer = if ($Model -eq 'M1') { 14 } else { 40 }
+        for ($v = 1; $v -le $maxVer; $v++) {
             # Calculate total bits needed for this version
             $totalBits = 0
             foreach ($seg in $segments) {
@@ -783,6 +851,12 @@ function New-QRCode {
                     if ($val -lt 128) { $totalBits += 8 } 
                     elseif ($val -lt 16384) { $totalBits += 16 } 
                     else { $totalBits += 24 }
+                } elseif ($seg.Mode -eq 'SA') {
+                    $totalBits += 16
+                } elseif ($seg.Mode -eq 'F2') {
+                    $totalBits += 8
+                } elseif ($seg.Mode -eq 'F1') {
+                    $totalBits += 0
                 } else {
                     # Character Count Indicator
                     $cb = switch ($seg.Mode) { 
@@ -824,7 +898,7 @@ function New-QRCode {
             }
         }
         
-        if ($Version -eq 0) { throw "Datos muy largos (max soportado: Version 40)" }
+        if ($Version -eq 0) { throw "Datos muy largos (max soportado: Version $maxVer)" }
     }
     
     Write-Host "Version: $Version ($(GetSize $Version)x$(GetSize $Version))" -ForegroundColor Cyan
@@ -837,7 +911,7 @@ function New-QRCode {
     $allCW = BuildCW $dataCW $Version $ECLevel
     
     Write-Host "Matriz..." -ForegroundColor Yellow
-    $matrix = InitM $Version
+    $matrix = InitM $Version $Model
     
     Write-Host "Datos..." -ForegroundColor Yellow
     PlaceData $matrix $allCW
@@ -887,7 +961,15 @@ function Start-BatchProcessing {
     param(
         [string]$IniPath = ".\config.ini",
         [string]$InputFileOverride = "",
-        [string]$OutputDirOverride = ""
+        [string]$OutputDirOverride = "",
+        [ValidateSet('M1','M2')][string]$Model = 'M2',
+        [switch]$Fnc1First,
+        [switch]$Fnc1Second,
+        [int]$Fnc1ApplicationIndicator = 0,
+        [int]$StructuredAppendIndex = -1,
+        [int]$StructuredAppendTotal = 0,
+        [int]$StructuredAppendParity = -1,
+        [string]$StructuredAppendParityData = ""
     )
     
     if (-not (Test-Path $IniPath) -and [string]::IsNullOrEmpty($InputFileOverride)) { 
@@ -999,7 +1081,7 @@ function Start-BatchProcessing {
         $finalPath = Join-Path $outPath $name
         
         try {
-            New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal
+            New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Model $Model -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData
         } catch {
             Write-Host "Error generando QR para '$dataToEncode': $_" -ForegroundColor Red
         }
@@ -1013,11 +1095,11 @@ function Start-BatchProcessing {
 # ENTRY POINT
 if (-not [string]::IsNullOrEmpty($Data)) {
     # Modo CLI Directo (Un solo QR)
-    New-QRCode -Data $Data -OutputPath $OutputPath -ECLevel $ECLevel -Version $Version -ModuleSize $ModuleSize -EciValue $EciValue -ShowConsole:$ShowConsole
+    New-QRCode -Data $Data -OutputPath $OutputPath -ECLevel $ECLevel -Version $Version -ModuleSize $ModuleSize -EciValue $EciValue -Model $Model -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -ShowConsole:$ShowConsole
 } else {
     # Modo Batch (Por Archivo o Config)
     if (-not [string]::IsNullOrEmpty($InputFile) -or (Test-Path $IniPath)) {
-        Start-BatchProcessing -IniPath $IniPath -InputFileOverride $InputFile -OutputDirOverride $OutputDir
+        Start-BatchProcessing -IniPath $IniPath -InputFileOverride $InputFile -OutputDirOverride $OutputDir -Model $Model -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData
     } else {
         Write-Host "`n  [QR] QR Generator FINAL - PowerShell Nativo`n" -ForegroundColor Magenta
         Write-Host "  Uso CLI QR:      .\QRCode.ps1 -Data 'Texto' -OutputPath 'out.png'"

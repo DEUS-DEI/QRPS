@@ -37,3 +37,8 @@ Prueba Version 1	VARIANTE_VERSION	V1	.\QRCode.ps1 -Data "Prueba Version 1" -Vers
 Prueba Version 10	VARIANTE_VERSION	V10	.\QRCode.ps1 -Data "Prueba Version 10" -Version 10 -OutputPath "qr_v10.png"
 Prueba Version 40	VARIANTE_VERSION	V40	.\QRCode.ps1 -Data "Prueba Version 40" -Version 40 -OutputPath "qr_v40.png"
 Prueba ECI 26	VARIANTE_ECI	ECI-26	.\QRCode.ps1 -Data "Prueba ECI 26 ñ" -EciValue 26 -OutputPath "qr_eci_26.png"
+Prueba Model 1	VARIANTE_MODELO	Modelo1	.\QRCode.ps1 -Data "Prueba Model 1" -Model "M1" -Version 4 -OutputPath "qr_model1_v4.png"
+01012345678901281724010110ABC	GS1	Modelo2-FNC1-Primero	.\QRCode.ps1 -Data "01012345678901281724010110ABC" -Fnc1First -OutputPath "qr_gs1_fn1.png"
+1101234567890123	FNC1_SEGUNDO	Modelo2-FNC1-Segundo	.\QRCode.ps1 -Data "1101234567890123" -Fnc1Second -Fnc1ApplicationIndicator 10 -OutputPath "qr_fnc1_segundo.png"
+Structured Append Parte A	STRUCT_APPEND	SA-1-2	.\QRCode.ps1 -Data "Structured Append Parte A" -StructuredAppendTotal 2 -StructuredAppendIndex 0 -StructuredAppendParityData "Structured Append Parte A|Structured Append Parte B" -OutputPath "qr_sa_1.png"
+Structured Append Parte B	STRUCT_APPEND	SA-2-2	.\QRCode.ps1 -Data "Structured Append Parte B" -StructuredAppendTotal 2 -StructuredAppendIndex 1 -StructuredAppendParityData "Structured Append Parte A|Structured Append Parte B" -OutputPath "qr_sa_2.png"

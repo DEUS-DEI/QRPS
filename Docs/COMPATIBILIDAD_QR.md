@@ -2,7 +2,7 @@
 
 ## Resumen Ejecutivo
 
-Este generador de códigos QR implementa una **solución 100% nativa en PowerShell** que cumple con las especificaciones del estándar **ISO/IEC 18004** (QR Code Model 2). El análisis detallado muestra un alto nivel de compatibilidad con las especificaciones oficiales.
+Este generador de códigos QR implementa una **solución 100% nativa en PowerShell** que cumple con las especificaciones del estándar **ISO/IEC 18004** (QR Code Model 1 y Model 2). El análisis detallado muestra un alto nivel de compatibilidad con las especificaciones oficiales.
 
 ---
 
@@ -10,21 +10,21 @@ Este generador de códigos QR implementa una **solución 100% nativa en PowerShe
 
 | **Especificación** | **Estado** | **Implementación** | **Notas** |
 |:---|:---:|:---|:---|
-| **Estándar Base** | ✅ | ISO/IEC 18004 (QR Model 2) | Implementación completa |
-| **Versiones Soportadas** | ✅ | V1-V40 (21x21 a 177x177) | Rango completo estándar |
+| **Estándar Base** | ✅ | ISO/IEC 18004 (QR Model 1 y 2) | Implementación completa |
+| **Versiones Soportadas** | ✅ | Model 2: V1-V40 / Model 1: V1-V14 | Rango completo por modelo |
 | **Niveles de Corrección** | ✅ | L, M, Q, H (7%-30%) | Todos los niveles ISO |
 | **Modos de Codificación** | ✅ | Numérico, Alfanumérico, Byte (UTF-8), Kanji | Segmentación automática N/A/B/K |
 | **Modo Kanji (Shift-JIS)** | ✅ | Codificador disponible | Selección automática habilitada |
 | **Segmentación Automática** | ✅ | Motor inteligente multi-modo | Optimización de capacidad |
 | **Reed-Solomon ECC** | ✅ | Galois Field GF(256) | Algoritmo estándar |
-| **Patrones Funcionales** | ✅ | Finder, Timing, Alignment | Todos los patrones ISO |
+| **Patrones Funcionales** | ✅ | Finder, Timing, Alignment | Alignment solo en Model 2 |
 | **Máscaras de Datos** | ✅ | 8 patrones (0-7) | Selección automática |
 | **Información de Formato** | ✅ | 15 bits con BCH(15,5) | Codificación estándar |
 | **Información de Versión** | ✅ | V7-V40 con BCH(18,6) | Para versiones ≥7 |
 | **Zona Silenciosa** | ✅ | 4 módulos mínimos | Cumple especificación |
 | **Codificación UTF-8** | ✅ | ECI 26 automático | Soporte internacional |
-| **Structured Append** | ❌ | ISO/IEC 18004 | No implementado |
-| **FNC1 / GS1** | ❌ | ISO/IEC 18004 / GS1 | No implementado |
+| **Structured Append** | ✅ | ISO/IEC 18004 | Modo 3 habilitado |
+| **FNC1 / GS1** | ✅ | ISO/IEC 18004 / GS1 | Modos 5 y 9 habilitados |
 | **Micro QR / rMQR** | ❌ | ISO/IEC 18004 / ISO/IEC 23941 | No implementado |
 | **Exportación PNG** | ✅ | Escalado configurable | Formato estándar |
 
@@ -49,7 +49,7 @@ Este generador de códigos QR implementa una **solución 100% nativa en PowerShe
 - **Patrones Finder**: 3 patrones de localización en esquinas
 - **Separadores**: Bordes blancos alrededor de patrones finder
 - **Patrones de Timing**: Líneas alternadas para sincronización
-- **Patrones de Alignment**: Posicionamiento preciso para versiones ≥2
+- **Patrones de Alignment**: Posicionamiento preciso para versiones ≥2 en Model 2
 - **Dark Module**: Módulo oscuro fijo en posición (4V+9, 8)
 
 ### **Optimizaciones Avanzadas**
@@ -179,13 +179,11 @@ El generador implementa **100% de las especificaciones críticas** del estándar
 - ✅ **Rendimiento**: Optimizado para PowerShell nativo
 - ✅ **Mantenibilidad**: Código limpio y bien documentado
 
-**Recomendación**: ✅ **APROBADO** para uso en producción según estándares ISO/IEC 18004 (QR Model 2).
+**Recomendación**: ✅ **APROBADO** para uso en producción según estándares ISO/IEC 18004 (QR Model 1 y 2).
 
 ---
 
-## ⚠️ Limitaciones Actuales (Modelo 2)
-- **Structured Append**: No disponible (ISO/IEC 18004 Modo 3)
-- **FNC1/GS1**: No disponible (Modos 5 y 9)
+## ⚠️ Limitaciones Actuales
 - **Variantes Micro/rMQR**: No disponibles
 
 ---

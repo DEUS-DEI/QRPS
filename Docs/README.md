@@ -24,13 +24,15 @@ pwsh -Version
 
 ## ✨ Características Principales
 
-*   **Simbología Estándar:** Soporte completo para **QR Modelo 2** (Versiones 1 a 40).
+*   **Simbología Estándar:** Soporte para **QR Modelo 2** (Versiones 1 a 40) y **Modelo 1** (Versiones 1 a 14).
 *   **Segmentación Inteligente:** Motor dinámico que optimiza automáticamente el tamaño del código alternando entre modos:
     *   🔢 **Numérico:** Máxima densidad para cifras.
     *   🔠 **Alfanumérico:** Para texto simple y símbolos comunes.
     *   🌐 **Byte (UTF-8):** Compatibilidad universal para tildes, eñes y caracteres especiales.
 *   **ECI (Extended Channel Interpretation):** Inserción automática de ECI 26 para que los escáneres identifiquen correctamente los datos en UTF-8.
 *   **Kanji (Shift-JIS):** Selección automática de segmentos para caracteres japoneses.
+*   **Structured Append:** Soporte para Modo 3 con encabezado por símbolo.
+*   **FNC1 / GS1:** Soporte para modos 5 y 9 con Application Indicator.
 *   **Corrección de Errores (ECC):** Soporte total para niveles **L, M, Q y H**, garantizando legibilidad incluso en superficies dañadas.
 *   **Exportación Directa:** Genera archivos **PNG** nítidos con control total sobre el tamaño del módulo y bordes (quiet zone).
 
@@ -56,6 +58,15 @@ C:\Users\[USERNAME]\AppData\Local\Microsoft\WindowsApps\pwsh.exe -NoProfile .\QR
 
 # Con personalización avanzada
 .\QRCode.ps1 -Data "Mi Texto" -ECLevel "H" -ModuleSize 15 -OutputPath "personalizado.png"
+
+# Modelo 1 (Versiones 1-14)
+.\QRCode.ps1 -Data "Modelo 1" -Model "M1" -Version 4 -OutputPath "model1.png"
+
+# FNC1 GS1 (modo primera posición)
+.\QRCode.ps1 -Data "01012345678901281724010110ABC" -Fnc1First -OutputPath "gs1.png"
+
+# Structured Append (símbolo 1 de 2)
+.\QRCode.ps1 -Data "Parte A" -StructuredAppendTotal 2 -StructuredAppendIndex 0 -StructuredAppendParityData "Parte A|Parte B" -OutputPath "sa_1.png"
 ```
 
 ### Procesamiento por Lotes (Batch)
@@ -90,6 +101,7 @@ El archivo puede contener columnas separadas por tabulación. El script usa la c
 https://www.google.com	URL	Modelo2-Auto	.\QRCode.ps1 -Data "https://www.google.com" -OutputPath "qr_url.png"
 1234567890	NUMERICO	EC-L	.\QRCode.ps1 -Data "1234567890" -ECLevel "L" -OutputPath "qr_ec_l.png"
 BEGIN:VCARD...END:VCARD	VCARD	Modelo2-Auto	.\QRCode.ps1 -Data "BEGIN:VCARD...END:VCARD" -OutputPath "qr_vcard.png"
+01012345678901281724010110ABC	GS1	Modelo2-FNC1	.\QRCode.ps1 -Data "01012345678901281724010110ABC" -Fnc1First -OutputPath "qr_gs1.png"
 ```
 
 ---

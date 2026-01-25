@@ -168,6 +168,17 @@ foreach ($k in $script:RMQR_SPEC.Keys) {
         }
     }
 }
+$script:RMQR_CB_VI = @{}
+foreach ($k in $script:RMQR_SPEC.Keys) {
+    $sp = $script:RMQR_SPEC[$k]
+    $grp = if ($sp.H -le 9) { 'S' } elseif ($sp.H -le 13) { 'M' } else { 'L' }
+    $cb = switch ($grp) {
+        'S' { @{ N=10; A=9;  B=8;  K=8 } }
+        'M' { @{ N=12; A=11; B=16; K=10 } }
+        'L' { @{ N=14; A=13; B=16; K=12 } }
+    }
+    $script:RMQR_CB_VI[$sp.VI] = $cb
+}
 
 for ($v = 1; $v -le 40; $v++) {
     $script:CAP[$v] = @{}
@@ -612,7 +623,7 @@ function RMQREncode($txt, $spec, $ec) {
     $bits = New-Object System.Collections.ArrayList
     $de = if ($ec -eq 'H') { $spec.H2 } else { $spec.M }
     $capBits = $de.D * 8
-    $grp = Get-RMQRCountGroup $spec
+    $cbMap = $script:RMQR_CB_VI[$spec.VI]
     $needsUtf8 = $false
     foreach ($seg in $segments) {
         if ($seg.Mode -eq 'B' -and $seg.Data -match '[^ -~]') { $needsUtf8 = $true; break }
@@ -642,12 +653,7 @@ function RMQREncode($txt, $spec, $ec) {
             }
             continue
         }
-        $cb = switch ($mode) {
-            'N' { switch ($grp) { 'S'{10} 'M'{12} 'L'{14} } }
-            'A' { switch ($grp) { 'S'{9}  'M'{11} 'L'{13} } }
-            'B' { switch ($grp) { 'S'{8}  'M'{16} 'L'{16} } }
-            'K' { switch ($grp) { 'S'{8}  'M'{10} 'L'{12} } }
-        }
+        $cb = switch ($mode) { 'N' { $cbMap.N } 'A' { $cbMap.A } 'B' { $cbMap.B } 'K' { $cbMap.K } }
         $count = if ($mode -eq 'B') { [Text.Encoding]::UTF8.GetByteCount($txtS) } else { $txtS.Length }
         for ($i = $cb - 1; $i -ge 0; $i--) { [void]$bits.Add([int](($count -shr $i) -band 1)) }
         switch ($mode) {
@@ -701,13 +707,6 @@ function RMQREncode($txt, $spec, $ec) {
         $dataCW += $byte
     }
     return $dataCW
-}
-
-function Get-RMQRCountGroup($spec) {
-    $vi = $spec.VI
-    if ($vi -le 11) { return 'S' }
-    elseif ($vi -le 21) { return 'M' }
-    else { return 'L' }
 }
 
 function GetGen($n) {

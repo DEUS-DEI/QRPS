@@ -42,3 +42,4 @@ Prueba Model 1	VARIANTE_MODELO	Modelo1	.\QRCode.ps1 -Data "Prueba Model 1" -Mode
 1101234567890123	FNC1_SEGUNDO	Modelo2-FNC1-Segundo	.\QRCode.ps1 -Data "1101234567890123" -Fnc1Second -Fnc1ApplicationIndicator 10 -OutputPath "qr_fnc1_segundo.png"
 Structured Append Parte A	STRUCT_APPEND	SA-1-2	.\QRCode.ps1 -Data "Structured Append Parte A" -StructuredAppendTotal 2 -StructuredAppendIndex 0 -StructuredAppendParityData "Structured Append Parte A|Structured Append Parte B" -OutputPath "qr_sa_1.png"
 Structured Append Parte B	STRUCT_APPEND	SA-2-2	.\QRCode.ps1 -Data "Structured Append Parte B" -StructuredAppendTotal 2 -StructuredAppendIndex 1 -StructuredAppendParityData "Structured Append Parte A|Structured Append Parte B" -OutputPath "qr_sa_2.png"
+Micro QR	VARIANTE_MICRO	Micro-Auto	.\QRCode.ps1 -Data "Micro QR" -Symbol "Micro" -MicroVersion "AUTO" -OutputPath "qr_micro.png"

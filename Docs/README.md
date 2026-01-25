@@ -31,6 +31,7 @@ pwsh -Version
     *   🌐 **Byte (UTF-8):** Compatibilidad universal para tildes, eñes y caracteres especiales.
 *   **ECI (Extended Channel Interpretation):** Inserción automática de ECI 26 para que los escáneres identifiquen correctamente los datos en UTF-8.
 *   **Kanji (Shift-JIS):** Selección automática de segmentos para caracteres japoneses.
+*   **Micro QR:** Soporte para versiones M1-M4 en PowerShell puro.
 *   **Structured Append:** Soporte para Modo 3 con encabezado por símbolo.
 *   **FNC1 / GS1:** Soporte para modos 5 y 9 con Application Indicator.
 *   **Corrección de Errores (ECC):** Soporte total para niveles **L, M, Q y H**, garantizando legibilidad incluso en superficies dañadas.
@@ -66,7 +67,10 @@ C:\Users\[USERNAME]\AppData\Local\Microsoft\WindowsApps\pwsh.exe -NoProfile .\QR
 .\QRCode.ps1 -Data "01012345678901281724010110ABC" -Fnc1First -OutputPath "gs1.png"
 
 # Structured Append (símbolo 1 de 2)
-.\QRCode.ps1 -Data "Parte A" -StructuredAppendTotal 2 -StructuredAppendIndex 0 -StructuredAppendParityData "Parte A|Parte B" -OutputPath "sa_1.png"
+.\\QRCode.ps1 -Data "Parte A" -StructuredAppendTotal 2 -StructuredAppendIndex 0 -StructuredAppendParityData "Parte A|Parte B" -OutputPath "sa_1.png"
+
+# Micro QR (auto)
+.\\QRCode.ps1 -Data "Micro" -Symbol "Micro" -MicroVersion "AUTO" -OutputPath "micro.png"
 ```
 
 ### Procesamiento por Lotes (Batch)

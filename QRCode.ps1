@@ -1,10 +1,10 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 <#
 .SYNOPSIS
     QR Code Generator FINAL - PowerShell Nativo 100% Funcional
 .DESCRIPTION
-    Implementación completa siguiendo ISO/IEC 18004
+    ImplementaciÃ³n completa siguiendo ISO/IEC 18004
     Genera QR codes escaneables
 #>
 [CmdletBinding()]
@@ -18,7 +18,9 @@ param(
     [int]$Version = 0,
     [int]$ModuleSize = 10,
     [int]$EciValue = 0,
+    [ValidateSet('QR','Micro','rMQR')][string]$Symbol = 'QR',
     [ValidateSet('M1','M2')][string]$Model = 'M2',
+    [ValidateSet('AUTO','M1','M2','M3','M4')][string]$MicroVersion = 'AUTO',
     [switch]$Fnc1First,
     [switch]$Fnc1Second,
     [int]$Fnc1ApplicationIndicator = 0,
@@ -187,7 +189,200 @@ function Get-StructuredAppendParity($txt) {
     return $par
 }
 
-function Get-Segments($txt) {
+function Write-Status($message) {
+    Write-Information $message -InformationAction Continue
+}
+
+$script:MICRO_CAP = @{
+    'M1' = @{
+        '-' = @{ N = 5 }
+    }
+    'M2' = @{
+        'L' = @{ N = 10; A = 6 }
+        'M' = @{ N = 8; A = 5 }
+    }
+    'M3' = @{
+        'L' = @{ N = 23; A = 14; B = 9; K = 6 }
+        'M' = @{ N = 18; A = 11; B = 7; K = 4 }
+    }
+    'M4' = @{
+        'L' = @{ N = 35; A = 21; B = 15; K = 9 }
+        'M' = @{ N = 30; A = 18; B = 13; K = 8 }
+        'Q' = @{ N = 21; A = 13; B = 9; K = 5 }
+    }
+}
+
+function GetMicroSize($ver) {
+    switch ($ver) {
+        'M1' { 11 }
+        'M2' { 13 }
+        'M3' { 15 }
+        'M4' { 17 }
+    }
+}
+
+function GetMicroMode($txt) {
+    if ($txt -match '^[0-9]+$') { return 'N' }
+    $allAlnum = $true
+    for ($i = 0; $i -lt $txt.Length; $i++) {
+        if (-not $script:ALPH.Contains($txt[$i])) { $allAlnum = $false; break }
+    }
+    if ($allAlnum) { return 'A' }
+    $allKanji = $true
+    for ($i = 0; $i -lt $txt.Length; $i++) {
+        if (-not (IsKanjiChar $txt.Substring($i,1))) { $allKanji = $false; break }
+    }
+    if ($allKanji) { return 'K' }
+    return 'B'
+}
+
+function GetMicroModeInfo($ver, $mode) {
+    switch ($ver) {
+        'M1' { return @{ Len = 0; Val = 0 } }
+        'M2' {
+            if ($mode -eq 'N') { return @{ Len = 1; Val = 0 } }
+            if ($mode -eq 'A') { return @{ Len = 1; Val = 1 } }
+        }
+        'M3' {
+            if ($mode -eq 'N') { return @{ Len = 2; Val = 0 } }
+            if ($mode -eq 'A') { return @{ Len = 2; Val = 1 } }
+            if ($mode -eq 'B') { return @{ Len = 2; Val = 2 } }
+            if ($mode -eq 'K') { return @{ Len = 2; Val = 3 } }
+        }
+        'M4' {
+            if ($mode -eq 'N') { return @{ Len = 3; Val = 1 } }
+            if ($mode -eq 'A') { return @{ Len = 3; Val = 2 } }
+            if ($mode -eq 'B') { return @{ Len = 3; Val = 3 } }
+            if ($mode -eq 'K') { return @{ Len = 3; Val = 4 } }
+        }
+    }
+    throw "Modo no soportado para $ver"
+}
+
+function GetMicroCountBits($ver, $mode) {
+    switch ($ver) {
+        'M1' { return 3 }
+        'M2' { return if ($mode -eq 'N') { 4 } else { 3 } }
+        'M3' { $v = switch ($mode) { 'N' { 5 } 'A' { 4 } 'B' { 4 } 'K' { 3 } }; return $v }
+        'M4' { $v = switch ($mode) { 'N' { 6 } 'A' { 5 } 'B' { 4 } 'K' { 4 } }; return $v }
+    }
+}
+
+function GetMicroCap($ver, $ec, $mode) {
+    if (-not $script:MICRO_CAP.ContainsKey($ver)) { return -1 }
+    $eckey = if ($ver -eq 'M1') { '-' } else { $ec }
+    if (-not $script:MICRO_CAP[$ver].ContainsKey($eckey)) { return -1 }
+    if (-not $script:MICRO_CAP[$ver][$eckey].ContainsKey($mode)) { return -1 }
+    return $script:MICRO_CAP[$ver][$eckey][$mode]
+}
+
+function InitMicroM($ver) {
+    $size = GetMicroSize $ver
+    $m = NewM $size
+    AddFinder $m 0 0
+    for ($i = 7; $i -lt $size; $i++) {
+        $v = ($i % 2) -eq 0
+        if (-not (IsF $m 6 $i)) { SetF $m 6 $i $v }
+        if (-not (IsF $m $i 6)) { SetF $m $i 6 $v }
+    }
+    for ($i = 0; $i -lt 9; $i++) {
+        if ($i -lt $size) {
+            if (-not (IsF $m 8 $i)) { $m.Func["8,$i"] = $true }
+            if (-not (IsF $m $i 8)) { $m.Func["$i,8"] = $true }
+        }
+    }
+    return $m
+}
+
+function GetMicroTotalCw($ver) {
+    $m = InitMicroM $ver
+    $dataModules = 0
+    for ($r = 0; $r -lt $m.Size; $r++) {
+        for ($c = 0; $c -lt $m.Size; $c++) {
+            if (-not (IsF $m $r $c)) { $dataModules++ }
+        }
+    }
+    return [Math]::Floor($dataModules / 8)
+}
+
+function AddFormatMicro($m, $ec, $mask) {
+    $fmt = $script:FMT["$ec$mask"]
+    for ($i = 0; $i -lt 15; $i++) {
+        $bit = [int]($fmt[$i].ToString())
+        if ($i -le 5) {
+            $m.Mod["8,$i"] = $bit
+        } elseif ($i -eq 6) {
+            $m.Mod["8,7"] = $bit
+        } elseif ($i -eq 7) {
+            $m.Mod["8,8"] = $bit
+        } elseif ($i -eq 8) {
+            $m.Mod["7,8"] = $bit
+        } else {
+            $row = 14 - $i
+            $m.Mod["$row,8"] = $bit
+        }
+    }
+}
+
+function FindBestMaskMicro($m) {
+    $best = 0; $min = [int]::MaxValue
+    for ($p = 0; $p -lt 4; $p++) {
+        $masked = ApplyMask $m $p
+        $pen = GetPenalty $masked
+        if ($pen -lt $min) { $min = $pen; $best = $p }
+    }
+    return $best
+}
+
+function MicroEncode($txt, $ver, $ec, $mode) {
+    $bits = New-Object System.Collections.ArrayList
+    $mi = GetMicroModeInfo $ver $mode
+    if ($mi.Len -gt 0) {
+        for ($b = $mi.Len - 1; $b -ge 0; $b--) { [void]$bits.Add([int](($mi.Val -shr $b) -band 1)) }
+    }
+    $cb = GetMicroCountBits $ver $mode
+    $count = if ($mode -eq 'B') { [Text.Encoding]::UTF8.GetByteCount($txt) } else { $txt.Length }
+    for ($i = $cb - 1; $i -ge 0; $i--) { [void]$bits.Add([int](($count -shr $i) -band 1)) }
+    switch ($mode) {
+        'N' {
+            for ($i = 0; $i -lt $txt.Length; $i += 3) {
+                $ch = $txt.Substring($i, [Math]::Min(3, $txt.Length - $i))
+                $v = [int]$ch; $nb = switch ($ch.Length) { 3{10} 2{7} 1{4} }
+                for ($b = $nb - 1; $b -ge 0; $b--) { [void]$bits.Add([int](($v -shr $b) -band 1)) }
+            }
+        }
+        'A' {
+            for ($i = 0; $i -lt $txt.Length; $i += 2) {
+                if ($i + 1 -lt $txt.Length) {
+                    $v = $script:ALPH.IndexOf($txt[$i]) * 45 + $script:ALPH.IndexOf($txt[$i+1])
+                    for ($b = 10; $b -ge 0; $b--) { [void]$bits.Add([int](($v -shr $b) -band 1)) }
+                } else {
+                    $v = $script:ALPH.IndexOf($txt[$i])
+                    for ($b = 5; $b -ge 0; $b--) { [void]$bits.Add([int](($v -shr $b) -band 1)) }
+                }
+            }
+        }
+        'B' {
+            foreach ($byte in [Text.Encoding]::UTF8.GetBytes($txt)) {
+                for ($b = 7; $b -ge 0; $b--) { [void]$bits.Add([int](($byte -shr $b) -band 1)) }
+            }
+        }
+        'K' {
+            $sjis = [System.Text.Encoding]::GetEncoding(932)
+            $bytes = $sjis.GetBytes($txt)
+            for ($i = 0; $i -lt $bytes.Length; $i += 2) {
+                $val = ([int]$bytes[$i] -shl 8) -bor [int]$bytes[$i+1]
+                if ($val -ge 0x8140 -and $val -le 0x9FFC) { $val -= 0x8140 }
+                elseif ($val -ge 0xE040 -and $val -le 0xEBBF) { $val -= 0xC140 }
+                $val = (($val -shr 8) * 0xC0) + ($val -band 0xFF)
+                for ($b = 12; $b -ge 0; $b--) { [void]$bits.Add([int](($val -shr $b) -band 1)) }
+            }
+        }
+    }
+    return ,$bits
+}
+
+function Get-Segment($txt) {
     $segs = @()
     $len = $txt.Length
     $i = 0
@@ -729,7 +924,15 @@ function AddFormat($m, $ec, $mask) {
     }
 }
 
-function ExportPng($m, $path, $scale, $quiet) {
+function ExportPng {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        $m,
+        $path,
+        $scale,
+        $quiet
+    )
+    if (-not $PSCmdlet.ShouldProcess($path, "Exportar PNG")) { return }
     Add-Type -AssemblyName System.Drawing
     
     $img = ($m.Size + $quiet * 2) * $scale
@@ -755,24 +958,24 @@ function ExportPng($m, $path, $scale, $quiet) {
 }
 
 function ShowConsole($m) {
-    Write-Host ""
+    Write-Output ""
     $border = [string]::new([char]0x2588, ($m.Size + 2) * 2)
-    Write-Host "  $border"
+    Write-Output "  $border"
     
     for ($r = 0; $r -lt $m.Size; $r++) {
         $line = "  " + [char]0x2588 + [char]0x2588
         for ($c = 0; $c -lt $m.Size; $c++) {
             $line += if ((GetM $m $r $c) -eq 1) { "  " } else { [string]::new([char]0x2588, 2) }
         }
-        Write-Host "$line$([char]0x2588)$([char]0x2588)"
+        Write-Output "$line$([char]0x2588)$([char]0x2588)"
     }
     
-    Write-Host "  $border"
-    Write-Host ""
+    Write-Output "  $border"
+    Write-Output ""
 }
 
 function New-QRCode {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)][string]$Data,
         [ValidateSet('L','M','Q','H')][string]$ECLevel = 'M',
@@ -780,7 +983,9 @@ function New-QRCode {
         [string]$OutputPath,
         [int]$ModuleSize = 10,
         [int]$EciValue = 0,
+        [ValidateSet('QR','Micro','rMQR')][string]$Symbol = 'QR',
         [ValidateSet('M1','M2')][string]$Model = 'M2',
+        [ValidateSet('AUTO','M1','M2','M3','M4')][string]$MicroVersion = 'AUTO',
         [switch]$Fnc1First,
         [switch]$Fnc1Second,
         [int]$Fnc1ApplicationIndicator = 0,
@@ -793,7 +998,91 @@ function New-QRCode {
     
     $sw = [Diagnostics.Stopwatch]::StartNew()
     
-    if ($Fnc1First -and $Fnc1Second) { throw "FNC1 solo admite primera o segunda posición" }
+    if ($Symbol -eq 'Micro') {
+        $mode = GetMicroMode $Data
+        if ($MicroVersion -eq 'AUTO') {
+            $order = @('M1','M2','M3','M4')
+            foreach ($mv in $order) {
+                $ecTry = if ($mv -eq 'M1') { 'L' } else { $ECLevel }
+                $cap = GetMicroCap $mv $ecTry $mode
+                if ($cap -lt 0) { continue }
+                $len = if ($mode -eq 'B') { [Text.Encoding]::UTF8.GetByteCount($Data) } else { $Data.Length }
+                if ($len -le $cap) { $MicroVersion = $mv; break }
+            }
+            if ($MicroVersion -eq 'AUTO') { throw "Datos muy largos para Micro QR" }
+        }
+        $ecUse = if ($MicroVersion -eq 'M1') { 'L' } else { $ECLevel }
+        $capFinal = GetMicroCap $MicroVersion $ecUse $mode
+        if ($capFinal -lt 0) { throw "Modo/EC no soportado en $MicroVersion" }
+        
+        $mi = GetMicroModeInfo $MicroVersion $mode
+        $cb = GetMicroCountBits $MicroVersion $mode
+        $capBits = 0
+        if ($mode -eq 'N') {
+            $full = [Math]::Floor($capFinal / 3); $rem = $capFinal % 3
+            $bitsRem = 0; if($rem -eq 1){$bitsRem=4} elseif($rem -eq 2){$bitsRem=7}
+            $capBits = $mi.Len + $cb + $full * 10 + $bitsRem
+        } elseif ($mode -eq 'A') {
+            $full = [Math]::Floor($capFinal / 2); $rem = $capFinal % 2
+            $bitsRem = 0; if($rem -eq 1){$bitsRem=6}
+            $capBits = $mi.Len + $cb + $full * 11 + $bitsRem
+        } elseif ($mode -eq 'B') {
+            $capBits = $mi.Len + $cb + ($capFinal * 8)
+        } elseif ($mode -eq 'K') {
+            $capBits = $mi.Len + $cb + ($capFinal * 13)
+        }
+        $dataCwMax = [Math]::Ceiling($capBits / 8)
+        $totalCw = GetMicroTotalCw $MicroVersion
+        $eccLen = $totalCw - $dataCwMax
+        if ($eccLen -lt 0) { throw "Capacidad Micro invÃ¡lida" }
+        
+        $bits = MicroEncode $Data $MicroVersion $ecUse $mode
+        if ($bits -isnot [System.Collections.ArrayList]) {
+            $tmp = New-Object System.Collections.ArrayList
+            [void]$tmp.AddRange($bits)
+            $bits = $tmp
+        }
+        $capacityBits = $dataCwMax * 8
+        if ($bits.Count -gt $capacityBits) { throw "Datos exceden capacidad Micro" }
+        $term = [Math]::Min(4, $capacityBits - $bits.Count)
+        for ($i = 0; $i -lt $term; $i++) { [void]$bits.Add(0) }
+        while ($bits.Count % 8 -ne 0) { [void]$bits.Add(0) }
+        $pads = @(236, 17); $pi = 0
+        while ($bits.Count -lt $capacityBits) {
+            $pb = $pads[$pi]; $pi = 1 - $pi
+            for ($b = 7; $b -ge 0; $b--) { [void]$bits.Add([int](($pb -shr $b) -band 1)) }
+        }
+        $dataCW = @()
+        for ($i = 0; $i -lt $bits.Count; $i += 8) {
+            $byte = 0
+            for ($j = 0; $j -lt 8; $j++) { $byte = ($byte -shl 1) -bor $bits[$i + $j] }
+            $dataCW += $byte
+        }
+        $ecCW = if ($eccLen -gt 0) { GetEC $dataCW $eccLen } else { @() }
+        $allCW = $dataCW + $ecCW
+        
+        Write-Status "Version: $MicroVersion ($(GetMicroSize $MicroVersion)x$(GetMicroSize $MicroVersion))"
+        Write-Status "EC: $ecUse"
+        
+        $matrix = InitMicroM $MicroVersion
+        PlaceData $matrix $allCW
+        $mask = FindBestMaskMicro $matrix
+        $final = ApplyMask $matrix $mask
+        AddFormatMicro $final $ecUse $mask
+        
+        $sw.Stop()
+        Write-Status "Tiempo: $($sw.ElapsedMilliseconds)ms"
+        if ($ShowConsole) { ShowConsole $final }
+        if ($OutputPath -and $PSCmdlet.ShouldProcess($OutputPath, "Exportar PNG")) {
+            ExportPng $final $OutputPath $ModuleSize 2
+            Write-Status "Guardado: $OutputPath"
+        }
+        return $final
+    }
+    
+    if ($Symbol -eq 'rMQR') { throw "rMQR no implementado en PowerShell puro" }
+    
+    if ($Fnc1First -and $Fnc1Second) { throw "FNC1 solo admite primera o segunda posiciÃ³n" }
     if ($Fnc1Second -and ($Fnc1ApplicationIndicator -lt 0 -or $Fnc1ApplicationIndicator -gt 255)) { throw "Fnc1ApplicationIndicator debe estar entre 0 y 255" }
     if ($Model -eq 'M1' -and $Version -gt 14) { throw "Model 1 solo soporta versiones 1-14" }
     
@@ -803,7 +1092,7 @@ function New-QRCode {
         if ($StructuredAppendIndex -lt 0 -or $StructuredAppendIndex -ge $StructuredAppendTotal) { throw "StructuredAppendIndex debe estar entre 0 y Total-1" }
     }
     
-    $dataSegments = Get-Segments $Data
+    $dataSegments = Get-Segment $Data
     $segments = @()
     
     if ($useSA) {
@@ -832,7 +1121,7 @@ function New-QRCode {
     
     # Display Segments info
     $modesStr = ($segments | ForEach-Object { $_.Mode }) -join "+"
-    Write-Host "Modos: $modesStr" -ForegroundColor Cyan
+    Write-Status "Modos: $modesStr"
     
     # 2. Determine Version
     if ($Version -eq 0) {
@@ -901,35 +1190,35 @@ function New-QRCode {
         if ($Version -eq 0) { throw "Datos muy largos (max soportado: Version $maxVer)" }
     }
     
-    Write-Host "Version: $Version ($(GetSize $Version)x$(GetSize $Version))" -ForegroundColor Cyan
-    Write-Host "EC: $ECLevel" -ForegroundColor Cyan
+    Write-Status "Version: $Version ($(GetSize $Version)x$(GetSize $Version))"
+    Write-Status "EC: $ECLevel"
     
-    Write-Host "Codificando..." -ForegroundColor Yellow
+    Write-Status "Codificando..."
     $dataCW = Encode $segments $Version $ECLevel
     
-    Write-Host "Reed-Solomon..." -ForegroundColor Yellow
+    Write-Status "Reed-Solomon..."
     $allCW = BuildCW $dataCW $Version $ECLevel
     
-    Write-Host "Matriz..." -ForegroundColor Yellow
+    Write-Status "Matriz..."
     $matrix = InitM $Version $Model
     
-    Write-Host "Datos..." -ForegroundColor Yellow
+    Write-Status "Datos..."
     PlaceData $matrix $allCW
     
-    Write-Host "Mascaras..." -ForegroundColor Yellow
+    Write-Status "Mascaras..."
     $mask = FindBestMask $matrix
-    Write-Host "Mascara: $mask" -ForegroundColor Cyan
+    Write-Status "Mascara: $mask"
     
     $final = ApplyMask $matrix $mask
     AddFormat $final $ECLevel $mask
     
     $sw.Stop()
-    Write-Host "Tiempo: $($sw.ElapsedMilliseconds)ms" -ForegroundColor Green
+    Write-Status "Tiempo: $($sw.ElapsedMilliseconds)ms"
     
     if ($ShowConsole) { ShowConsole $final }
-    if ($OutputPath) {
+    if ($OutputPath -and $PSCmdlet.ShouldProcess($OutputPath, "Exportar PNG")) {
         ExportPng $final $OutputPath $ModuleSize 4
-        Write-Host "Guardado: $OutputPath" -ForegroundColor Green
+        Write-Status "Guardado: $OutputPath"
     }
     
     return $final
@@ -958,11 +1247,14 @@ function Get-IniValue($content, $section, $key, $defaultValue) {
 }
 
 function Start-BatchProcessing {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$IniPath = ".\config.ini",
         [string]$InputFileOverride = "",
         [string]$OutputDirOverride = "",
+        [ValidateSet('QR','Micro','rMQR')][string]$Symbol = 'QR',
         [ValidateSet('M1','M2')][string]$Model = 'M2',
+        [ValidateSet('AUTO','M1','M2','M3','M4')][string]$MicroVersion = 'AUTO',
         [switch]$Fnc1First,
         [switch]$Fnc1Second,
         [int]$Fnc1ApplicationIndicator = 0,
@@ -973,7 +1265,7 @@ function Start-BatchProcessing {
     )
     
     if (-not (Test-Path $IniPath) -and [string]::IsNullOrEmpty($InputFileOverride)) { 
-        Write-Host "No se encontro config.ini ni archivo de entrada." -ForegroundColor Red
+        Write-Error "No se encontro config.ini ni archivo de entrada."
         return 
     }
     
@@ -985,7 +1277,7 @@ function Start-BatchProcessing {
         $selectedFile = $InputFileOverride
     } else {
         $inputFilesRaw = Get-IniValue $iniContent "QRPS" "QRPS_ArchivoEntrada" "lista_inputs.tsv"
-        # Asegurar que es un array si tiene múltiples elementos
+        # Asegurar que es un array si tiene mÃºltiples elementos
         if ($inputFilesRaw -match ',') {
             $inputFiles = @($inputFilesRaw -split ',' | ForEach-Object { $_.Trim() })
         } else {
@@ -995,12 +1287,12 @@ function Start-BatchProcessing {
         if ($inputFiles.Count -eq 1) {
             $selectedFile = $inputFiles[0]
         } else {
-            Write-Host "`n=== SELECCION DE LISTA DE ENTRADA ===" -ForegroundColor Cyan
+            Write-Status "`n=== SELECCION DE LISTA DE ENTRADA ==="
             for ($i=0; $i -lt $inputFiles.Count; $i++) {
                 $prefixMenu = if ($i -eq 0) { " [ENTER/1]" } else { " [$($i+1)]" }
-                Write-Host "$prefixMenu $($inputFiles[$i])"
+                Write-Status "$prefixMenu $($inputFiles[$i])"
             }
-            Write-Host "Seleccione (Default en 5s: $($inputFiles[0])): " -NoNewline -ForegroundColor Yellow
+            Write-Status "Seleccione (Default en 5s: $($inputFiles[0])):"
             
             $timeout = 5
             $choice = -1
@@ -1018,11 +1310,11 @@ function Start-BatchProcessing {
             }
             
             $selectedFile = if ($choice -ne -1) { $inputFiles[$choice] } else { $inputFiles[0] }
-            Write-Host "`nUsando: $selectedFile" -ForegroundColor Cyan
+            Write-Status "`nUsando: $selectedFile"
         }
     }
 
-    # 2. Leer resto de configuración
+    # 2. Leer resto de configuraciÃ³n
     $outDir = if (-not [string]::IsNullOrEmpty($OutputDirOverride)) { $OutputDirOverride } else { Get-IniValue $iniContent "QRPS" "QRPS_CarpetaSalida" "salida_qr" }
     $ecLevel = Get-IniValue $iniContent "QRPS" "QRPS_NivelEC" "M"
     $modSize = [int](Get-IniValue $iniContent "QRPS" "QRPS_TamanoModulo" "10")
@@ -1039,17 +1331,19 @@ function Start-BatchProcessing {
     # Validar entrada
     $inputPath = if ([System.IO.Path]::IsPathRooted($selectedFile)) { $selectedFile } else { Join-Path $PSScriptRoot $selectedFile }
     if (-not (Test-Path $inputPath)) {
-        Write-Host "Archivo de entrada no encontrado: $selectedFile" -ForegroundColor Red
+        Write-Error "Archivo de entrada no encontrado: $selectedFile"
         return
     }
     
     # Determinar carpeta salida
     $outPath = if ([System.IO.Path]::IsPathRooted($outDir)) { $outDir } else { Join-Path $PSScriptRoot $outDir }
     if (-not (Test-Path $outPath)) {
-        New-Item -ItemType Directory -Force -Path $outPath | Out-Null
+        if ($PSCmdlet.ShouldProcess($outPath, "Crear directorio")) {
+            New-Item -ItemType Directory -Force -Path $outPath | Out-Null
+        }
     }
     
-    # Procesar líneas
+    # Procesar lÃ­neas
     $lines = Get-Content $inputPath -Encoding UTF8
     $count = 1
     
@@ -1066,7 +1360,7 @@ function Start-BatchProcessing {
         if ($useConsec) {
             $baseName = "$count"
         } else {
-            # Sanitizar nombre basado únicamente en los datos de la columna seleccionada
+            # Sanitizar nombre basado Ãºnicamente en los datos de la columna seleccionada
             $baseName = $dataToEncode -replace '[^a-zA-Z0-9]', '_'
             if ($baseName.Length -gt 30) { $baseName = $baseName.Substring(0, 30) }
         }
@@ -1080,30 +1374,33 @@ function Start-BatchProcessing {
         
         $finalPath = Join-Path $outPath $name
         
-        try {
-            New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Model $Model -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData
-        } catch {
-            Write-Host "Error generando QR para '$dataToEncode': $_" -ForegroundColor Red
+        if ($PSCmdlet.ShouldProcess($finalPath, "Generar QR")) {
+            try {
+                New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData
+            } catch {
+                Write-Error "Error generando QR para '$dataToEncode': $_"
+            }
         }
         $count++
     }
     
-    Write-Host "Proceso completado. QRs guardados en: $outDir" -ForegroundColor Green
+    Write-Status "Proceso completado. QRs guardados en: $outDir"
 }
 
 # Ejecutar proceso batch si existe config.ini y se llama el script directamente
 # ENTRY POINT
 if (-not [string]::IsNullOrEmpty($Data)) {
     # Modo CLI Directo (Un solo QR)
-    New-QRCode -Data $Data -OutputPath $OutputPath -ECLevel $ECLevel -Version $Version -ModuleSize $ModuleSize -EciValue $EciValue -Model $Model -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -ShowConsole:$ShowConsole
+    New-QRCode -Data $Data -OutputPath $OutputPath -ECLevel $ECLevel -Version $Version -ModuleSize $ModuleSize -EciValue $EciValue -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -ShowConsole:$ShowConsole
 } else {
     # Modo Batch (Por Archivo o Config)
     if (-not [string]::IsNullOrEmpty($InputFile) -or (Test-Path $IniPath)) {
-        Start-BatchProcessing -IniPath $IniPath -InputFileOverride $InputFile -OutputDirOverride $OutputDir -Model $Model -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData
+        Start-BatchProcessing -IniPath $IniPath -InputFileOverride $InputFile -OutputDirOverride $OutputDir -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData
     } else {
-        Write-Host "`n  [QR] QR Generator FINAL - PowerShell Nativo`n" -ForegroundColor Magenta
-        Write-Host "  Uso CLI QR:      .\QRCode.ps1 -Data 'Texto' -OutputPath 'out.png'"
-        Write-Host "  Uso CLI Batch:   .\QRCode.ps1 -InputFile 'lista.tsv' -OutputDir 'resultados'"
-        Write-Host "  Uso Automatico:  Crear config.ini y ejecutar .\QRCode.ps1"
+        Write-Status "`n  [QR] QR Generator FINAL - PowerShell Nativo`n"
+        Write-Status "  Uso CLI QR:      .\QRCode.ps1 -Data 'Texto' -OutputPath 'out.png'"
+        Write-Status "  Uso CLI Batch:   .\QRCode.ps1 -InputFile 'lista.tsv' -OutputDir 'resultados'"
+        Write-Status "  Uso Automatico:  Crear config.ini y ejecutar .\QRCode.ps1"
     }
 }
+

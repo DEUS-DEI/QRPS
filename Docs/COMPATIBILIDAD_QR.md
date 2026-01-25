@@ -154,6 +154,12 @@ Patrón 7: ((i+j mod 2) + (ij mod 3)) mod 2 = 0
 
 ---
 
+### **Funciones de Validación**
+- **Decodificación de referencia (Modelo 2)**: disponible con flag `-Decode` para verificar el contenido de los símbolos generados.
+- **Reporte de calidad**: disponible con flag `-QualityReport` para métricas de densidad, bloques 2×2 y quiet zone sugerida.
+
+---
+
 ## 📈 Rendimiento
 
 ### **Velocidad de Generación**
@@ -184,7 +190,9 @@ El generador implementa **100% de las especificaciones críticas** del estándar
 ---
 
 ## ⚠️ Limitaciones Actuales
-- **rMQR**: No disponible
+- **rMQR**: Generación disponible de forma experimental; decodificación no disponible en esta referencia.
+- **Micro QR**: Generación disponible (M1-M4); decodificación no disponible en esta referencia.
+- **SQRC / FrameQR / iQR**: No implementados (estándares propietarios o complejidad alta pendiente).
 
 ---
 

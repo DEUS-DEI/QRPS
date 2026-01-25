@@ -6,6 +6,7 @@ salida_qr/
 *.jpg
 *.jpeg
 *.bmp
+*.svg
 
 # Archivos temporales de sistema
 Thumbs.db

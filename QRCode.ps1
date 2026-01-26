@@ -3057,12 +3057,11 @@ function Start-BatchProcessing {
         } else {
             Write-Status "`n=== SELECCION DE LISTA DE ENTRADA ==="
             for ($i=0; $i -lt $inputFiles.Count; $i++) {
-                $prefixMenu = if ($i -eq 0) { " [ENTER/1]" } else { " [$($i+1)]" }
-                Write-Status "$prefixMenu $($inputFiles[$i])"
+                $suffixDefault = if ($i -eq 0) { " (Default)" } else { "" }
+                Write-Status " [$($i+1)] $($inputFiles[$i])$suffixDefault"
             }
-            Write-Status "Seleccione (Default en 5s: $($inputFiles[0])):"
-            
-            $timeout = 5
+            $timeout = [int](Get-IniValue $iniContent "QRPS" "QRPS_MenuTimeout" "5")
+            Write-Status "Seleccione (Default en $($timeout)s: $($inputFiles[0])):"
             $choice = -1
             $start = [DateTime]::Now
             while (([DateTime]::Now - $start).TotalSeconds -lt $timeout) {

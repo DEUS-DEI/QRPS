@@ -100,6 +100,19 @@ El motor `qrps` ha sido diseñado para ser **libre de regalías** y cumplir con 
 
 ---
 
+## 🧪 Pruebas y Validación (QA)
+
+Para garantizar el cumplimiento de los estándares ISO tras cualquier modificación, el proyecto incluye una suite de pruebas automatizadas:
+
+| Script | Propósito | Cobertura |
+| :--- | :--- | :--- |
+| **[verify_decoding.ps1](file:///c:/Users/kgrb/Documents/GitHUb/qrps/verify_decoding.ps1)** | Validación de Algoritmos | Prueba Reed-Solomon, corrección de errores y decodificación interna. |
+| **[verify_file_decoding.ps1](file:///c:/Users/kgrb/Documents/GitHUb/qrps/verify_file_decoding.ps1)** | Integración de Archivos | Valida el ciclo completo de exportación y lectura de PNG/SVG. |
+| **[test_rmqr.ps1](file:///c:/Users/kgrb/Documents/GitHUb/qrps/test_rmqr.ps1)** | Simbología rMQR | Valida las 27 versiones rectangulares y su decodificación. |
+| **[test_sa.ps1](file:///c:/Users/kgrb/Documents/GitHUb/qrps/test_sa.ps1)** | Structured Append | Verifica la división de datos y el cálculo de paridad ISO 15434. |
+
+---
+
 Este motor cumple con el **100% de la suite de estándares ISO/IEC** para códigos de barras 2D, incluyendo generación, decodificación y reporte de calidad profesional.
 
 ### 1. Estándares de Generación y Simbología

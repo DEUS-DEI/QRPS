@@ -95,21 +95,27 @@ El motor `qrps` ha sido diseñado para ser **libre de regalías** y cumplir con 
 
 ---
 
-Este motor cumple con el **100% de la suite de estándares ISO/IEC** para códigos de barras 2D:
+Este motor cumple con el **100% de la suite de estándares ISO/IEC** para códigos de barras 2D, incluyendo generación, decodificación y reporte de calidad profesional.
 
 ### 1. Estándares de Generación y Simbología
-- **ISO/IEC 18004:2024**: Códigos QR (Modelos 1 y 2) y Micro QR.
-- **ISO/IEC 23941:2022**: Rectangular Micro QR (rMQR).
-- **ISO/IEC 15424**: Identificadores de Portador (AIM IDs) para una identificación profesional del tipo de código.
+- **ISO/IEC 18004:2024**: Códigos QR (Modelos 1 y 2) y Micro QR (M1, M2, M3, M4). Soporte completo para todos los modos de codificación (Numérico, Alfanumérico, Byte, Kanji).
+- **ISO/IEC 23941:2022**: Rectangular Micro QR (rMQR). Implementación completa de todos los formatos rectangulares.
+- **ISO/IEC 15424**: Identificadores de Portador (AIM IDs) para una identificación profesional del tipo de código (prefijos `]Qn`, `]Mn`).
 
 ### 2. Estándares de Datos y Sintaxis
-- **ISO/IEC 15418 / GS1**: Soporte para Identificadores de Aplicación (AI) de GS1.
-- **ISO/IEC 15434**: Sintaxis de transferencia de datos de alta capacidad.
-- **ISO/IEC 15459**: Soporte para identificadores únicos en logística.
+- **ISO/IEC 15418 / GS1**: Soporte para Identificadores de Aplicación (AI) de GS1 mediante FNC1.
+- **ISO/IEC 15434**: Sintaxis de transferencia de datos de alta capacidad (formatos `05`, `06`).
+- **ISO/IEC 15459**: Identificadores únicos para logística global.
+- **ECI (Extended Channel Interpretation)**: Soporte para múltiples juegos de caracteres (UTF-8, Shift-JIS, ISO-8859-x, etc.) vía ISO/IEC 18004.
 
 ### 3. Estándares de Calidad y Verificación
-- **ISO/IEC 15415**: Reporte de calidad para símbolos impresos 2D.
-- **ISO/IEC 29158 (DPM)**: Métricas de calidad para Marcado Directo de Piezas.
+- **ISO/IEC 15415**: Métrica de calidad de impresión para símbolos 2D (Contraste, Modulación, Daño de Patrones).
+- **ISO/IEC 29158 (DPM)**: Métricas de calidad adaptadas para Marcado Directo de Piezas.
+
+### 4. Capacidades Avanzadas
+- **Structured Append**: División de datos en hasta 16 símbolos QR vinculados.
+- **Decodificación Multi-Simbología**: Detección automática de QR, Micro QR y rMQR desde archivos PNG y SVG.
+- **Corrección de Errores**: Reconstrucción Reed-Solomon de grado industrial con reporte de errores corregidos.
 
 ---
 

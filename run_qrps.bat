@@ -40,7 +40,7 @@ if "%choice%"=="1" (
 if "%choice%"=="2" (
     echo.
     set /p qrdata="Ingresa el texto o URL para el QR: "
-    set /p qrname="Ingresa el nombre del archivo (ej: mi_codigo.png): "
+    set /p qrname="Ingresa el nombre del archivo (ej: mi_codigo.svg): "
     echo.
     echo [INFO] Generando QR...
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\QRCode.ps1" -Data "!qrdata!" -OutputPath "!qrname!"

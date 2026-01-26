@@ -3136,7 +3136,7 @@ function Start-BatchProcessing {
         $nameParts = @($prefix, $baseName)
         if (-not [string]::IsNullOrEmpty($suffix)) { $nameParts += $suffix }
         if ($useTs) { $nameParts += "_" + (Get-Date -Format $tsFormat) }
-        $fmt = (Get-IniValue $iniContent "QRPS" "QRPS_FormatoSalida" "png").ToLower()
+        $fmt = (Get-IniValue $iniContent "QRPS" "QRPS_FormatoSalida" "svg").ToLower()
         $ext = if ($fmt -eq "svg") { ".svg" } else { ".png" }
         $name = ($nameParts -join "") + $ext
         

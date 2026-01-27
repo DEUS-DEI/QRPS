@@ -2899,11 +2899,6 @@ function ExportPdfMultiNative {
             @($pages[$pIdx])
         }
 
-        # Objeto Página (Placeholder)
-        &$StartObj
-        $pageId = $objOffsets.Count
-        $actualPageIds += $pageId
-        
         $pW = if ($isGrid) { $pageW } else { 
             $item = $itemsInThisPage[0]
             $baseW = if ($null -ne $item.m.Width) { $item.m.Width } else { $item.m.Size }
@@ -2922,17 +2917,18 @@ function ExportPdfMultiNative {
             ($baseH + ($item.quiet * 2) + ($frameSize * 2) + $textHeight) * $item.scale
         }
 
-        # Content Object
+        # Content Object (Buffer in memory)
         $contentSb = New-Object System.Text.StringBuilder
         $xObjects = @{} # Name -> Id
 
         $cellW = $pW / $cols
         $cellH = $pH / $rows
-
-        for ($i = 0; $i -lt $itemsInThisPage.Count; $i++) {
-            $item = $itemsInThisPage[$i]
-            $c = $i % $cols
-            $r = [Math]::Floor($i / $cols)
+        
+        $itemIdx = 0
+        foreach ($item in $itemsInThisPage) {
+            $c = $itemIdx % $cols
+            $r = [Math]::Floor($itemIdx / $cols)
+            $itemIdx++
             
             $offsetX = $c * $cellW
             $offsetY = $pH - (($r + 1) * $cellH)
@@ -3118,7 +3114,7 @@ function ExportPdfMultiNative {
             }
         }
 
-        # Resources Object
+        # 1. Resources Object
         &$StartObj
         $resId = $objOffsets.Count
         $resStr = "<< /ProcSet [/PDF /Text /ImageB /ImageC /ImageI] /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >> >>"
@@ -3130,7 +3126,7 @@ function ExportPdfMultiNative {
         $resStr += " >>"
         &$WriteStr "$resStr`nendobj`n"
 
-        # Content Object
+        # 2. Content Object
         $enc = [System.Text.Encoding]::GetEncoding(1252)
         $contentBytes = $enc.GetBytes($contentSb.ToString())
         &$StartObj
@@ -3139,11 +3135,11 @@ function ExportPdfMultiNative {
         $bw.Write($contentBytes)
         &$WriteStr "`nendstream`nendobj`n"
 
-        # Update Page Object
-        $currPos = $fs.Position
-        $fs.Position = $objOffsets[$pageId - 1]
-        &$WriteStr "$pageId 0 obj`n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $(ToDot $pW) $(ToDot $pH)] /Contents $contId 0 R /Resources $resId 0 R >>`nendobj`n"
-        $fs.Position = $currPos
+        # 3. Page Object (Write it now, sequentially)
+        &$StartObj
+        $pageId = $objOffsets.Count
+        $actualPageIds += $pageId
+        &$WriteStr "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $(ToDot $pW) $(ToDot $pH)] /Contents $contId 0 R /Resources $resId 0 R >>`nendobj`n"
     }
 
     # Finalize Pages Root

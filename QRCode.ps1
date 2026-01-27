@@ -2416,25 +2416,45 @@ function ExportPdf {
     $tempSvg = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid().ToString() + ".svg")
     $tempHtml = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid().ToString() + ".html")
     
-    # Detectar si es un QR rectangular o cuadrado
+    # Detectar si es un QR rectangular o cuadrado para obtener dimensiones
     if ($null -ne $m.Width) {
         ExportSvgRect -m $m -path $tempSvg -scale $scale -quiet $quiet -logoPath $logoPath -logoScale $logoScale
+        $wUnits = $m.Width + ($quiet * 2)
+        $hUnits = $m.Height + ($quiet * 2)
     } else {
         ExportSvg -m $m -path $tempSvg -scale $scale -quiet $quiet -logoPath $logoPath -logoScale $logoScale
+        $wUnits = $m.Size + ($quiet * 2)
+        $hUnits = $wUnits
     }
 
     $svgContent = Get-Content $tempSvg -Raw
     
-    # Crear un HTML temporal que envuelva el SVG con CSS para eliminar márgenes y cabeceras
-    # @page { margin: 0; } es la clave para quitar la fecha y ruta
+    # Calcular dimensiones en píxeles para el CSS
+    $widthPx = $wUnits * $scale
+    $heightPx = $hUnits * $scale
+
+    # Crear un HTML temporal que ajusta el tamaño de la página al tamaño exacto del QR
+    # @page { size: width height; } ajusta el papel al contenido
     $htmlContent = @"
 <!DOCTYPE html>
 <html>
 <head>
 <style>
-    @page { margin: 0; size: auto; }
-    body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: white; }
-    svg { width: 90vw; height: 90vh; }
+    @page { 
+        margin: 0; 
+        size: $($widthPx)px $($heightPx)px; 
+    }
+    body { 
+        margin: 0; 
+        padding: 0;
+        overflow: hidden;
+        background: white;
+    }
+    svg { 
+        width: $($widthPx)px; 
+        height: $($heightPx)px; 
+        display: block;
+    }
 </style>
 </head>
 <body>

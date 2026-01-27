@@ -46,9 +46,14 @@ if "%choice%"=="2" (
     if "!qrscale!"=="" set qrscale=20
     set /p qrversion="Ingresa la version del QR (1-40, 0=Auto) o presiona Enter: "
     if "!qrversion!"=="" set qrversion=0
+    set /p qrtext="Ingresa texto para debajo del QR (separado por comas para varias lineas) o presiona Enter: "
     echo.
     echo [INFO] Generando QR...
-    powershell -ExecutionPolicy Bypass -File QRCode.ps1 -Data "!qrdata!" -OutputPath "!qrname!" -LogoPath "!qrlogo!" -LogoScale !qrscale! -Version !qrversion!
+    if "!qrtext!"=="" (
+        powershell -ExecutionPolicy Bypass -File QRCode.ps1 -Data "!qrdata!" -OutputPath "!qrname!" -LogoPath "!qrlogo!" -LogoScale !qrscale! -Version !qrversion!
+    ) else (
+        powershell -ExecutionPolicy Bypass -File QRCode.ps1 -Data "!qrdata!" -OutputPath "!qrname!" -LogoPath "!qrlogo!" -LogoScale !qrscale! -Version !qrversion! -BottomText "!qrtext!"
+    )
     goto end
 )
 

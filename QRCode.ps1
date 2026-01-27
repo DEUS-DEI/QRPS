@@ -35,7 +35,8 @@ param(
     [switch]$Decode,
     [switch]$QualityReport,
     [string]$LogoPath = "",
-    [int]$LogoScale = 20
+    [int]$LogoScale = 20,
+    [string[]]$BottomText = @()
 )
 
 # GF(256) lookup tables
@@ -2321,12 +2322,22 @@ function ExportSvg {
         $scale,
         $quiet,
         [string]$logoPath = "",
-        [int]$logoScale = 20
+        [int]$logoScale = 20,
+        [string[]]$bottomText = @()
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar SVG")) { return }
     $size = $m.Size
     $wUnits = $size + ($quiet * 2)
-    $hUnits = $wUnits
+    
+    # Calcular altura adicional para texto
+    $textHeight = 0
+    $lineHeight = 3 # Altura en unidades de módulo
+    $textPadding = 1 # Padding entre QR y texto
+    if ($bottomText.Count -gt 0) {
+        $textHeight = ($bottomText.Count * $lineHeight) + $textPadding
+    }
+    
+    $hUnits = $wUnits + $textHeight
     $widthPx = $wUnits * $scale
     $heightPx = $hUnits * $scale
     $sb = New-Object System.Text.StringBuilder
@@ -2344,6 +2355,18 @@ function ExportSvg {
         }
     }
     [void]$sb.Append("</g>")
+
+    # Insertar Texto debajo
+    if ($bottomText.Count -gt 0) {
+        $fontSize = $lineHeight * 0.7
+        $currentY = $wUnits # Empezar justo después del QR (incluyendo quiet zone)
+        foreach ($line in $bottomText) {
+            $escapedText = [System.Security.SecurityElement]::Escape($line)
+            # Centrar texto: x = wUnits / 2
+            [void]$sb.Append("<text x=""$($wUnits/2)"" y=""$($currentY + $textPadding + $fontSize)"" font-family=""Arial, sans-serif"" font-size=""$fontSize"" text-anchor=""middle"" fill=""#000000"">$escapedText</text>")
+            $currentY += $lineHeight
+        }
+    }
 
     # Insertar Logo si existe
     if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
@@ -2410,7 +2433,8 @@ function ExportPdf {
         $scale,
         $quiet,
         [string]$logoPath = "",
-        [int]$logoScale = 20
+        [int]$logoScale = 20,
+        [string[]]$bottomText = @()
     )
     # Generar contenido SVG
     $tempSvg = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid().ToString() + ".svg")
@@ -2418,14 +2442,23 @@ function ExportPdf {
     
     # Detectar si es un QR rectangular o cuadrado para obtener dimensiones
     if ($null -ne $m.Width) {
-        ExportSvgRect -m $m -path $tempSvg -scale $scale -quiet $quiet -logoPath $logoPath -logoScale $logoScale
+        ExportSvgRect -m $m -path $tempSvg -scale $scale -quiet $quiet -logoPath $logoPath -logoScale $logoScale -bottomText $bottomText
         $wUnits = $m.Width + ($quiet * 2)
-        $hUnits = $m.Height + ($quiet * 2)
+        $hUnits_qr = $m.Height + ($quiet * 2)
     } else {
-        ExportSvg -m $m -path $tempSvg -scale $scale -quiet $quiet -logoPath $logoPath -logoScale $logoScale
+        ExportSvg -m $m -path $tempSvg -scale $scale -quiet $quiet -logoPath $logoPath -logoScale $logoScale -bottomText $bottomText
         $wUnits = $m.Size + ($quiet * 2)
-        $hUnits = $wUnits
+        $hUnits_qr = $wUnits
     }
+
+    # Calcular altura adicional para texto (debe coincidir con la lógica en ExportSvg/ExportSvgRect)
+    $textHeight = 0
+    $lineHeight = 3
+    $textPadding = 1
+    if ($bottomText.Count -gt 0) {
+        $textHeight = ($bottomText.Count * $lineHeight) + $textPadding
+    }
+    $hUnits = $hUnits_qr + $textHeight
 
     $svgContent = Get-Content $tempSvg -Raw
     
@@ -2513,11 +2546,21 @@ function ExportSvgRect {
         $scale,
         $quiet,
         [string]$logoPath = "",
-        [int]$logoScale = 20
+        [int]$logoScale = 20,
+        [string[]]$bottomText = @()
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar SVG")) { return }
     $wUnits = $m.Width + ($quiet * 2)
-    $hUnits = $m.Height + ($quiet * 2)
+    
+    # Calcular altura adicional para texto
+    $textHeight = 0
+    $lineHeight = 3 # Altura en unidades de módulo
+    $textPadding = 1 # Padding entre QR y texto
+    if ($bottomText.Count -gt 0) {
+        $textHeight = ($bottomText.Count * $lineHeight) + $textPadding
+    }
+    
+    $hUnits = $m.Height + ($quiet * 2) + $textHeight
     $widthPx = $wUnits * $scale
     $heightPx = $hUnits * $scale
     $sb = New-Object System.Text.StringBuilder
@@ -2535,6 +2578,18 @@ function ExportSvgRect {
         }
     }
     [void]$sb.Append("</g>")
+
+    # Insertar Texto debajo
+    if ($bottomText.Count -gt 0) {
+        $fontSize = $lineHeight * 0.7
+        $currentY = $m.Height + ($quiet * 2) # Empezar justo después del QR (incluyendo quiet zone)
+        foreach ($line in $bottomText) {
+            $escapedText = [System.Security.SecurityElement]::Escape($line)
+            # Centrar texto: x = wUnits / 2
+            [void]$sb.Append("<text x=""$($wUnits/2)"" y=""$($currentY + $textPadding + $fontSize)"" font-family=""Arial, sans-serif"" font-size=""$fontSize"" text-anchor=""middle"" fill=""#000000"">$escapedText</text>")
+            $currentY += $lineHeight
+        }
+    }
 
     # Insertar Logo si existe
     if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
@@ -2653,7 +2708,8 @@ function New-QRCode {
     [switch]$Decode,
     [switch]$QualityReport,
     [string]$LogoPath = "",
-    [int]$LogoScale = 20
+    [int]$LogoScale = 20,
+    [string[]]$BottomText = @()
     )
     
     # Si hay logo, forzamos EC Level H para asegurar lectura
@@ -3215,8 +3271,8 @@ function New-QRCode {
         $label = "Exportar $ext"
         if ($PSCmdlet.ShouldProcess($OutputPath, $label)) {
             switch ($ext) {
-                ".svg" { ExportSvg $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale }
-                ".pdf" { ExportPdf $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale }
+                ".svg" { ExportSvg $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText }
+                ".pdf" { ExportPdf $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText }
                 default { ExportPng $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale }
             }
         }
@@ -3415,6 +3471,12 @@ function Start-BatchProcessing {
         $cols = $trim -split "\t"
         $dataToEncode = if ($colIndex -lt $cols.Count) { $cols[$colIndex].Trim() } else { $cols[0].Trim() }
         
+        # Extraer textos adicionales para debajo del QR (todas las columnas son líneas)
+        $bottomText = @()
+        foreach ($col in $cols) {
+            $bottomText += $col.Trim()
+        }
+        
         # Determinar nombre base
         $baseName = ""
         if ($useConsec) {
@@ -3430,14 +3492,18 @@ function Start-BatchProcessing {
         if (-not [string]::IsNullOrEmpty($suffix)) { $nameParts += $suffix }
         if ($useTs) { $nameParts += "_" + (Get-Date -Format $tsFormat) }
         $fmt = (Get-IniValue $iniContent "QRPS" "QRPS_FormatoSalida" "svg").ToLower()
-        $ext = if ($fmt -eq "svg") { ".svg" } else { ".png" }
+        $ext = switch ($fmt) {
+            "svg" { ".svg" }
+            "pdf" { ".pdf" }
+            default { ".png" }
+        }
         $name = ($nameParts -join "") + $ext
         
         $finalPath = Join-Path $outPath $name
         
         if ($PSCmdlet.ShouldProcess($finalPath, "Generar QR")) {
             try {
-                New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $logoPathIni -LogoScale $logoScaleIni
+                New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $logoPathIni -LogoScale $logoScaleIni -BottomText $bottomText
             } catch {
                 Write-Error "Error generando QR para '$dataToEncode': $_"
             }
@@ -3488,7 +3554,7 @@ if ($Decode -and -not [string]::IsNullOrEmpty($InputPath)) {
     }
 } elseif (-not [string]::IsNullOrEmpty($Data)) {
     # Modo CLI Directo (Un solo QR)
-    New-QRCode -Data $Data -OutputPath $OutputPath -ECLevel $ECLevel -Version $Version -ModuleSize $ModuleSize -EciValue $EciValue -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -ShowConsole:$ShowConsole -Decode:$Decode -QualityReport:$QualityReport -LogoPath $LogoPath -LogoScale $LogoScale
+    New-QRCode -Data $Data -OutputPath $OutputPath -ECLevel $ECLevel -Version $Version -ModuleSize $ModuleSize -EciValue $EciValue -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -ShowConsole:$ShowConsole -Decode:$Decode -QualityReport:$QualityReport -LogoPath $LogoPath -LogoScale $LogoScale -BottomText $BottomText
 } else {
     # Modo Batch (Por Archivo o Config)
     if (-not [string]::IsNullOrEmpty($InputFile) -or (Test-Path $IniPath)) {

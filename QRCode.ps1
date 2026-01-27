@@ -2205,13 +2205,15 @@ function ExportPng {
         $m,
         $path,
         $scale,
-        $quiet
+        $quiet,
+        [string]$logoPath = "",
+        [int]$logoScale = 20
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar PNG")) { return }
     Add-Type -AssemblyName System.Drawing
     
-    $img = ($m.Size + $quiet * 2) * $scale
-    $bmp = New-Object Drawing.Bitmap $img, $img
+    $imgSize = ($m.Size + $quiet * 2) * $scale
+    $bmp = New-Object Drawing.Bitmap $imgSize, $imgSize
     $g = [Drawing.Graphics]::FromImage($bmp)
     $g.Clear([Drawing.Color]::White)
     
@@ -2226,6 +2228,28 @@ function ExportPng {
             }
         }
     }
+
+    # Insertar Logo si existe (Solo PNG soportado para salida PNG nativa)
+    if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
+        $logoExt = [System.IO.Path]::GetExtension($logoPath).ToLower()
+        if ($logoExt -eq ".png") {
+            try {
+                $logoBmp = [Drawing.Image]::FromFile($logoPath)
+                $lSize = ($imgSize * $logoScale) / 100
+                $lPos = ($imgSize - $lSize) / 2
+                
+                # Fondo blanco detrás del logo
+                $g.FillRectangle([Drawing.Brushes]::White, $lPos, $lPos, $lSize, $lSize)
+                
+                $g.DrawImage($logoBmp, $lPos, $lPos, $lSize, $lSize)
+                $logoBmp.Dispose()
+            } catch {
+                Write-Warning "No se pudo procesar el logo PNG en la salida PNG: $_"
+            }
+        } else {
+            Write-Warning "El logo SVG no se puede incrustar directamente en una salida PNG. Use formato .svg para el QR."
+        }
+    }
     
     $g.Dispose()
     $bmp.Save($path, [Drawing.Imaging.ImageFormat]::Png)
@@ -2238,7 +2262,9 @@ function ExportPngRect {
         $m,
         $path,
         $scale,
-        $quiet
+        $quiet,
+        [string]$logoPath = "",
+        [int]$logoScale = 20
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar PNG")) { return }
     Add-Type -AssemblyName System.Drawing
@@ -2257,6 +2283,31 @@ function ExportPngRect {
             }
         }
     }
+
+    # Insertar Logo si existe
+    if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
+        $logoExt = [System.IO.Path]::GetExtension($logoPath).ToLower()
+        if ($logoExt -eq ".png") {
+            try {
+                $logoBmp = [Drawing.Image]::FromFile($logoPath)
+                $minSide = if ($imgW -lt $imgH) { $imgW } else { $imgH }
+                $lSize = ($minSide * $logoScale) / 100
+                $lx = ($imgW - $lSize) / 2
+                $ly = ($imgH - $lSize) / 2
+                
+                # Fondo blanco detrás del logo
+                $g.FillRectangle([Drawing.Brushes]::White, $lx, $ly, $lSize, $lSize)
+                
+                $g.DrawImage($logoBmp, $lx, $ly, $lSize, $lSize)
+                $logoBmp.Dispose()
+            } catch {
+                Write-Warning "No se pudo procesar el logo PNG en la salida PNG: $_"
+            }
+        } else {
+            Write-Warning "El logo SVG no se puede incrustar directamente en una salida PNG. Use formato .svg para el QR."
+        }
+    }
+
     $g.Dispose()
     $bmp.Save($path, [Drawing.Imaging.ImageFormat]::Png)
     $bmp.Dispose()
@@ -2303,9 +2354,37 @@ function ExportSvg {
         if ($logoExt -eq ".svg") {
             try {
                 [xml]$logoSvg = Get-Content $logoPath
-                # Extraer contenido interno (remover tags svg/xml)
-                $inner = $logoSvg.DocumentElement.InnerXml
-                [void]$sb.Append("<g transform=""translate($lPos, $lPos) scale($($lSize / $wUnits))"">$inner</g>")
+                $root = $logoSvg.DocumentElement
+                
+                # Intentar obtener viewBox original del logo
+                $vBox = $root.viewBox
+                $lW = if ($root.width) { [double]($root.width -replace '[^\d.]','') } else { 100 }
+                $lH = if ($root.height) { [double]($root.height -replace '[^\d.]','') } else { 100 }
+                
+                if ($vBox) {
+                    $parts = $vBox -split '[ ,]+' | Where-Object { $_ -ne "" }
+                    if ($parts.Count -ge 4) {
+                        $lW = [double]$parts[2]
+                        $lH = [double]$parts[3]
+                    }
+                }
+                
+                # Escalar logo para que quepa en lSize manteniendo aspecto
+                $maxDim = if ($lW -gt $lH) { $lW } else { $lH }
+                $scaleFactorNum = $lSize / $maxDim
+                $scaleFactor = [math]::Round($scaleFactorNum, 6).ToString().Replace(",", ".")
+                
+                # Calcular centrado real basado en dimensiones finales
+                $finalW = $lW * $scaleFactorNum
+                $finalH = $lH * $scaleFactorNum
+                $offX = ($wUnits - $finalW) / 2
+                $offY = ($hUnits - $finalH) / 2
+                
+                # Ajustar el fondo blanco al tamaño real del logo
+                [void]$sb.Append("<rect x=""$offX"" y=""$offY"" width=""$finalW"" height=""$finalH"" fill=""#ffffff""/>")
+
+                $inner = $root.InnerXml
+                [void]$sb.Append("<g transform=""translate($offX, $offY) scale($scaleFactor)"">$inner</g>")
             } catch {
                 Write-Warning "No se pudo procesar el logo SVG: $_"
             }
@@ -2367,8 +2446,37 @@ function ExportSvgRect {
         if ($logoExt -eq ".svg") {
             try {
                 [xml]$logoSvg = Get-Content $logoPath
-                $inner = $logoSvg.DocumentElement.InnerXml
-                [void]$sb.Append("<g transform=""translate($lx, $ly) scale($($lSize / $minSide))"">$inner</g>")
+                $root = $logoSvg.DocumentElement
+                
+                # Intentar obtener viewBox original del logo
+                $vBox = $root.viewBox
+                $lW = if ($root.width) { [double]($root.width -replace '[^\d.]','') } else { 100 }
+                $lH = if ($root.height) { [double]($root.height -replace '[^\d.]','') } else { 100 }
+                
+                if ($vBox) {
+                    $parts = $vBox -split '[ ,]+' | Where-Object { $_ -ne "" }
+                    if ($parts.Count -ge 4) {
+                        $lW = [double]$parts[2]
+                        $lH = [double]$parts[3]
+                    }
+                }
+                
+                # Escalar logo para que quepa en lSize manteniendo aspecto
+                $maxDim = if ($lW -gt $lH) { $lW } else { $lH }
+                $scaleFactorNum = $lSize / $maxDim
+                $scaleFactor = [math]::Round($scaleFactorNum, 6).ToString().Replace(",", ".")
+                
+                # Calcular centrado real basado en dimensiones finales
+                $finalW = $lW * $scaleFactorNum
+                $finalH = $lH * $scaleFactorNum
+                $offX = ($wUnits - $finalW) / 2
+                $offY = ($hUnits - $finalH) / 2
+                
+                # Ajustar el fondo blanco al tamaño real del logo
+                [void]$sb.Append("<rect x=""$offX"" y=""$offY"" width=""$finalW"" height=""$finalH"" fill=""#ffffff""/>")
+
+                $inner = $root.InnerXml
+                [void]$sb.Append("<g transform=""translate($offX, $offY) scale($scaleFactor)"">$inner</g>")
             } catch {
                 Write-Warning "No se pudo procesar el logo SVG: $_"
             }
@@ -2448,8 +2556,10 @@ function New-QRCode {
     
     # Si hay logo, forzamos EC Level H para asegurar lectura
     if (-not [string]::IsNullOrEmpty($LogoPath)) {
+        # Remover comillas si el usuario las incluyó
+        $LogoPath = $LogoPath.Trim('"').Trim("'")
         $ECLevel = 'H'
-        Write-Status "[INFO] Logo detectado. Forzando Nivel de Error H (High) para asegurar legibilidad."
+        Write-Status "[INFO] Logo detectado: $LogoPath. Forzando Nivel de Error H (High)."
     }
 
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -2820,9 +2930,9 @@ function New-QRCode {
             $label = if ($isSvg) { "Exportar SVG" } else { "Exportar PNG" }
             if ($PSCmdlet.ShouldProcess($OutputPath, $label)) {
                 if ($isSvg) {
-                    ExportSvgRect $m $OutputPath $ModuleSize 4
+                    ExportSvgRect $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale
                 } else {
-                    ExportPngRect $m $OutputPath $ModuleSize 4
+                    ExportPngRect $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale
                 }
             }
         }
@@ -3005,7 +3115,7 @@ function New-QRCode {
             if ($isSvg) {
             ExportSvg $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale
         } else {
-            ExportPng $final $OutputPath $ModuleSize 4
+            ExportPng $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale
         }
         }
         Write-Status "Guardado: $OutputPath"

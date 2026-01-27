@@ -2848,8 +2848,23 @@ function ExportPdfMultiNative {
         if ($frameText) { $frameSize = 4 }
         $wUnits = $baseW + ($quiet * 2) + ($frameSize * 2)
         $hUnits = $baseH + ($quiet * 2) + ($frameSize * 2)
+        
+        # Texto inferior - Soporte multi-línea con \n
+        $allLines = @()
+        if ($bottomText.Count -gt 0) {
+            foreach ($item in $bottomText) {
+                if ([string]::IsNullOrEmpty($item)) { continue }
+                $subLines = $item -split "\\n"
+                foreach ($sl in $subLines) {
+                    if (-not [string]::IsNullOrEmpty($sl)) { $allLines += $sl }
+                }
+            }
+        }
+
         $textHeight = 0
-        if ($bottomText.Count -gt 0) { $textHeight = ($bottomText.Count * 3) + 1 }
+        if ($allLines.Count -gt 0) {
+            $textHeight = ($allLines.Count * 3) + 1
+        }
         $hTotalUnits = $hUnits + $textHeight
         $pdfW = $wUnits * $scale
         $pdfH = $hTotalUnits * $scale
@@ -2906,10 +2921,10 @@ function ExportPdfMultiNative {
             }
         }
 
-        if ($bottomText.Count -gt 0) {
+        if ($allLines.Count -gt 0) {
             [void]$contentSb.AppendLine("BT /F1 $(ToDot ($scale * 2)) Tf $fgColorPdf rg")
             $currentY = ($textHeight - 2) * $scale
-            foreach ($line in $bottomText) {
+            foreach ($line in $allLines) {
                 # Centrado: Helvetica tiene un ancho aproximado de 0.6 * size
                 # Para un centrado más preciso, usamos un factor de 0.5-0.6
                 $textW = $line.Length * ($scale * 2 * 0.55) 
@@ -2972,10 +2987,21 @@ function ExportPdfNative {
     $wUnits = $baseW + ($quiet * 2) + ($frameSize * 2)
     $hUnits = $baseH + ($quiet * 2) + ($frameSize * 2)
     
-    # Texto inferior
-    $textHeight = 0
+    # Texto inferior - Soporte multi-línea con \n
+    $allLines = @()
     if ($bottomText.Count -gt 0) {
-        $textHeight = ($bottomText.Count * 3) + 1
+        foreach ($item in $bottomText) {
+            if ([string]::IsNullOrEmpty($item)) { continue }
+            $subLines = $item -split "\\n"
+            foreach ($sl in $subLines) {
+                if (-not [string]::IsNullOrEmpty($sl)) { $allLines += $sl }
+            }
+        }
+    }
+
+    $textHeight = 0
+    if ($allLines.Count -gt 0) {
+        $textHeight = ($allLines.Count * 3) + 1
     }
     $hTotalUnits = $hUnits + $textHeight
 
@@ -3092,10 +3118,10 @@ function ExportPdfNative {
     }
 
     # Texto (si hay) - Usando Helvetica básica
-    if ($bottomText.Count -gt 0) {
+    if ($allLines.Count -gt 0) {
         [void]$contentSb.AppendLine("BT /F1 $(ToDot ($scale * 2)) Tf")
         $currentY = ($textHeight - 2) * $scale
-        foreach ($line in $bottomText) {
+        foreach ($line in $allLines) {
             # Centrado: Helvetica tiene un ancho aproximado de 0.6 * size
             $textW = $line.Length * ($scale * 2 * 0.55)
             $startX = ($pdfW - $textW) / 2
@@ -4358,6 +4384,7 @@ function Start-BatchProcessing {
         $rowBg = &$getRowVal "BgColor" $bgColorIni
         $rowRounded = [double](&$getRowVal "Rounded" $roundedIni)
         $rowFrame = &$getRowVal "Frame" $frameTextIni
+        $rowFrameColor = &$getRowVal "FrameColor" $frameColorIni
         $rowLogo = &$getRowVal "Logo" $logoPathIni
         $rowSymbol = &$getRowVal "Symbol" $Symbol
         $rowModel = &$getRowVal "Model" $Model
@@ -4366,7 +4393,7 @@ function Start-BatchProcessing {
         # Extraer textos adicionales para debajo del QR
         $bottomText = @()
         if ($headerMap.Count -gt 0) {
-            # Si hay cabeceras, buscamos Label1, Label2... o usamos todas si no hay labels especÃ­ficos
+            # Si hay cabeceras, buscamos Label1, Label2...
             $labels = @()
             for ($i=1; $i -le 5; $i++) {
                 $l = &$getRowVal "Label$i" ""
@@ -4375,18 +4402,21 @@ function Start-BatchProcessing {
             if ($labels.Count -gt 0) {
                 $bottomText = $labels
             } else {
-                # Fallback: todas las columnas excepto Data y configuraciones
-                foreach ($col in $cols) {
-                    $cTrim = $col.Trim()
-                    if ($cTrim -ne $dataToEncode -and $cTrim -ne $rowFg -and $cTrim -ne $rowBg) {
-                        $bottomText += $cTrim
+                # Fallback: incluir solo columnas que NO son parámetros conocidos
+                $knownParams = @("data", "dato", "color", "color2", "bgcolor", "rounded", "frame", "logo", "symbol", "model", "microversion", "frametext", "foregroundcolor", "backgroundcolor")
+                foreach ($h in $headerMap.Keys) {
+                    if ($knownParams -notcontains $h) {
+                        $v = &$getRowVal $h ""
+                        if (-not [string]::IsNullOrEmpty($v)) { $bottomText += $v }
                     }
                 }
             }
         } else {
-            # Sin cabeceras: comportamiento antiguo (todas las columnas)
-            foreach ($col in $cols) {
-                $bottomText += $col.Trim()
+            # Sin cabeceras: todas las columnas excepto la de datos
+            for ($i=0; $i -lt $cols.Count; $i++) {
+                if ($i -ne $colIndex) {
+                    $bottomText += $cols[$i].Trim()
+                }
             }
         }
         
@@ -4435,7 +4465,7 @@ function Start-BatchProcessing {
                         rowRounded = $rowRounded
                         gradType = $gradTypeIni
                         rowFrame = $rowFrame
-                        frameColor = $frameColorIni
+                        frameColor = $rowFrameColor
                         fontFamily = $fontFamilyIni
                         googleFont = $googleFontIni
                         # Flag de características complejas
@@ -4458,7 +4488,7 @@ function Start-BatchProcessing {
             
             if ($PSCmdlet.ShouldProcess($finalPath, "Generar QR ($fmt)")) {
                 try {
-                    New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Symbol $rowSymbol -Model $rowModel -MicroVersion $rowMicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $rowLogo -LogoScale $logoScaleIni -BottomText $bottomText -ForegroundColor $rowFg -ForegroundColor2 $rowFg2 -BackgroundColor $rowBg -Rounded $rowRounded -GradientType $gradTypeIni -FrameText $rowFrame -FrameColor $frameColorIni -FontFamily $fontFamilyIni -GoogleFont $googleFontIni
+                    New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Symbol $rowSymbol -Model $rowModel -MicroVersion $rowMicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $rowLogo -LogoScale $logoScaleIni -BottomText $bottomText -ForegroundColor $rowFg -ForegroundColor2 $rowFg2 -BackgroundColor $rowBg -Rounded $rowRounded -GradientType $gradTypeIni -FrameText $rowFrame -FrameColor $rowFrameColor -FontFamily $fontFamilyIni -GoogleFont $googleFontIni
                 } catch {
                     Write-Error "Error generando QR ($fmt) para '$dataToEncode': $_"
                 }

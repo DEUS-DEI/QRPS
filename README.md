@@ -49,7 +49,8 @@ El motor implementa la totalidad de los anexos técnicos del estándar:
 ### 🛠️ Características Técnicas
 - **Segmentación Inteligente**: Alterna automáticamente entre modos Numérico, Alfanumérico, Byte (UTF-8) y Kanji (Shift-JIS).
 - **Corrección de Errores (ECC)**: Implementación completa de Reed-Solomon (GF 256) niveles L, M, Q, H.
-- **Exportación PDF Nativa**: Conversión de vectores SVG a PDF utilizando Microsoft Edge (incorporado en Windows), garantizando salida vectorial sin dependencias de terceros o software de pago.
+- **Exportación PDF Nativa**: Conversión de vectores SVG a PDF utilizando Microsoft Edge (incorporado en Windows). Garantiza salida vectorial limpia, sin encabezados/pies de página y con ajuste automático al tamaño del código.
+- **Texto Inferior Escalable**: Soporte para múltiples líneas de texto debajo del QR, con escalado automático proporcional al tamaño del módulo y centrado dinámico.
 - **Decodificación de Referencia**: Capacidad de leer y verificar códigos generados (PNG/SVG).
 - **Reporte de Calidad**: Métricas de densidad, bloques 2x2 y cumplimiento de Quiet Zone.
 
@@ -90,11 +91,11 @@ El archivo `config.ini` permite automatizar el comportamiento del motor. Soporta
 | Variable | Descripción | Valor por Defecto |
 | :--- | :--- | :--- |
 | `QRPS_ArchivoEntrada` | Lista(s) de entrada (.tsv). Separadas por coma habilitan menú. | `lista_inputs.tsv` |
-| `QRPS_FormatoSalida` | Formato de imagen: `svg` (vectorial) o `png` (raster). | `svg` |
+| `QRPS_FormatoSalida` | Formato de imagen: `svg`, `pdf` o `png`. | `pdf` |
 | `QRPS_LogoPath` | Ruta al logo (SVG/PNG) para incrustar en el centro. | (Vacío) |
 | `QRPS_LogoScale` | Porcentaje del tamaño del logo respecto al QR. | `20` |
 | `QRPS_MenuTimeout` | Segundos de espera en el menú de selección de listas. | `5` |
-| `QRPS_IndiceColumna` | Columna del archivo TSV que contiene el dato a codificar. | `1` |
+| `QRPS_IndiceColumna` | Columna del TSV para el dato del QR. Las demás columnas se usan como texto inferior. | `1` |
 | `QRPS_NivelEC` | Nivel de corrección de errores: `L, M, Q, H`. | `M` |
 | `QRPS_TamanoModulo` | Tamaño de cada módulo (pixel/punto). | `10` |
 
@@ -112,6 +113,15 @@ Si prefieres no usar la línea de comandos de PowerShell, puedes usar el lanzado
 ### Generación vía PowerShell
 ```powershell
 .\QRCode.ps1 -Data "Hola Mundo" -OutputPath "codigo.svg"
+```
+
+### Generación con Texto Inferior
+```powershell
+# Una sola línea
+.\QRCode.ps1 -Data "Dato" -BottomText "Texto debajo" -OutputPath "qr.pdf"
+
+# Múltiples líneas (separadas por comas)
+.\QRCode.ps1 -Data "Dato" -BottomText "Línea 1,Línea 2,Línea 3" -OutputPath "qr_multiline.pdf"
 ```
 
 ### Personalización con Logos

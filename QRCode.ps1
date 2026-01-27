@@ -36,7 +36,18 @@ param(
     [switch]$QualityReport,
     [string]$LogoPath = "",
     [int]$LogoScale = 20,
-    [string[]]$BottomText = @()
+    [string[]]$BottomText = @(),
+    [string]$ForegroundColor = "#000000",
+    [string]$ForegroundColor2 = "",
+    [string]$BackgroundColor = "#ffffff",
+    [double]$Rounded = 0,
+    [string]$GradientType = "linear",
+    [string]$FrameText = "",
+    [string]$FrameColor = "",
+    [string]$FontFamily = "Arial, sans-serif",
+    [string]$GoogleFont = "",
+    [switch]$PdfUnico,
+    [string]$PdfUnicoNombre = "qr_combinado.pdf"
 )
 
 # GF(256) lookup tables
@@ -3800,7 +3811,20 @@ function Start-BatchProcessing {
         [int]$StructuredAppendIndex = -1,
         [int]$StructuredAppendTotal = 0,
         [int]$StructuredAppendParity = -1,
-        [string]$StructuredAppendParityData = ""
+        [string]$StructuredAppendParityData = "",
+        [string]$LogoPath = "",
+        [int]$LogoScale = -1,
+        [string]$ForegroundColor = "",
+        [string]$ForegroundColor2 = "",
+        [string]$BackgroundColor = "",
+        [double]$Rounded = -1,
+        [string]$GradientType = "",
+        [string]$FrameText = "",
+        [string]$FrameColor = "",
+        [string]$FontFamily = "",
+        [string]$GoogleFont = "",
+        [switch]$PdfUnico = $false,
+        [string]$PdfUnicoNombre = ""
     )
     
     if (-not (Test-Path $IniPath) -and [string]::IsNullOrEmpty($InputFileOverride)) { 
@@ -3863,19 +3887,23 @@ function Start-BatchProcessing {
     $useTs = (Get-IniValue $iniContent "QRPS" "QRPS_IncluirTimestamp" "no") -eq "si"
     $tsFormat = Get-IniValue $iniContent "QRPS" "QRPS_FormatoFecha" "yyyyMMdd_HHmmss"
     $eciVal = [int](Get-IniValue $iniContent "QRPS" "QRPS_ECI" "0")
-    $logoPathIni = Get-IniValue $iniContent "QRPS" "QRPS_LogoPath" ""
-    $logoScaleIni = [int](Get-IniValue $iniContent "QRPS" "QRPS_LogoScale" "20")
-    $fgColorIni = Get-IniValue $iniContent "QRPS" "QRPS_ColorFront" "#000000"
-    $fgColor2Ini = Get-IniValue $iniContent "QRPS" "QRPS_ColorFront2" ""
-    $bgColorIni = Get-IniValue $iniContent "QRPS" "QRPS_ColorBack" "#ffffff"
-    $roundedIni = [double](Get-IniValue $iniContent "QRPS" "QRPS_Redondeado" "0")
-    $gradTypeIni = Get-IniValue $iniContent "QRPS" "QRPS_TipoDegradado" "linear"
-    $frameTextIni = Get-IniValue $iniContent "QRPS" "QRPS_FrameText" ""
-    $frameColorIni = Get-IniValue $iniContent "QRPS" "QRPS_FrameColor" "#000000"
-    $fontFamilyIni = Get-IniValue $iniContent "QRPS" "QRPS_FontFamily" "Arial, sans-serif"
-    $googleFontIni = Get-IniValue $iniContent "QRPS" "QRPS_GoogleFont" ""
-    $pdfUnico = (Get-IniValue $iniContent "QRPS" "QRPS_PdfUnico" "no") -eq "si"
-    $pdfUnicoNombre = Get-IniValue $iniContent "QRPS" "QRPS_PdfUnicoNombre" "qr_combinado.pdf"
+    
+    # Precedencia de ParÃ¡metros (CLI > config.ini)
+    $logoPathIni = if (-not [string]::IsNullOrEmpty($LogoPath)) { $LogoPath } else { Get-IniValue $iniContent "QRPS" "QRPS_LogoPath" "" }
+    $logoScaleIni = if ($LogoScale -ge 0) { $LogoScale } else { [int](Get-IniValue $iniContent "QRPS" "QRPS_LogoScale" "20") }
+    $fgColorIni = if (-not [string]::IsNullOrEmpty($ForegroundColor)) { $ForegroundColor } else { Get-IniValue $iniContent "QRPS" "QRPS_ColorFront" "#000000" }
+    $fgColor2Ini = if (-not [string]::IsNullOrEmpty($ForegroundColor2)) { $ForegroundColor2 } else { Get-IniValue $iniContent "QRPS" "QRPS_ColorFront2" "" }
+    $bgColorIni = if (-not [string]::IsNullOrEmpty($BackgroundColor)) { $BackgroundColor } else { Get-IniValue $iniContent "QRPS" "QRPS_ColorBack" "#ffffff" }
+    $roundedIni = if ($Rounded -ge 0) { $Rounded } else { [double](Get-IniValue $iniContent "QRPS" "QRPS_Redondeado" "0") }
+    $gradTypeIni = if (-not [string]::IsNullOrEmpty($GradientType)) { $GradientType } else { Get-IniValue $iniContent "QRPS" "QRPS_TipoDegradado" "linear" }
+    $frameTextIni = if (-not [string]::IsNullOrEmpty($FrameText)) { $FrameText } else { Get-IniValue $iniContent "QRPS" "QRPS_FrameText" "" }
+    $frameColorIni = if (-not [string]::IsNullOrEmpty($FrameColor)) { $FrameColor } else { Get-IniValue $iniContent "QRPS" "QRPS_FrameColor" "#000000" }
+    $fontFamilyIni = if (-not [string]::IsNullOrEmpty($FontFamily)) { $FontFamily } else { Get-IniValue $iniContent "QRPS" "QRPS_FontFamily" "Arial, sans-serif" }
+    $googleFontIni = if (-not [string]::IsNullOrEmpty($GoogleFont)) { $GoogleFont } else { Get-IniValue $iniContent "QRPS" "QRPS_GoogleFont" "" }
+    
+    # PDF Unico logic (Prioritize CLI)
+     $pdfUnico = if ($PdfUnico) { $true } else { (Get-IniValue $iniContent "QRPS" "QRPS_PdfUnico" "no") -eq "si" }
+     $pdfUnicoNombre = if (-not [string]::IsNullOrEmpty($PdfUnicoNombre)) { $PdfUnicoNombre } else { Get-IniValue $iniContent "QRPS" "QRPS_PdfUnicoNombre" "qr_combinado.pdf" }
     
     # Si hay logo en config, forzamos EC Level H
     if (-not [string]::IsNullOrEmpty($logoPathIni)) {
@@ -4092,11 +4120,11 @@ if ($Decode -and -not [string]::IsNullOrEmpty($InputPath)) {
     }
 } elseif (-not [string]::IsNullOrEmpty($Data)) {
     # Modo CLI Directo (Un solo QR)
-    New-QRCode -Data $Data -OutputPath $OutputPath -ECLevel $ECLevel -Version $Version -ModuleSize $ModuleSize -EciValue $EciValue -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -ShowConsole:$ShowConsole -Decode:$Decode -QualityReport:$QualityReport -LogoPath $LogoPath -LogoScale $LogoScale -BottomText $BottomText
+    New-QRCode -Data $Data -OutputPath $OutputPath -ECLevel $ECLevel -Version $Version -ModuleSize $ModuleSize -EciValue $EciValue -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -ShowConsole:$ShowConsole -Decode:$Decode -QualityReport:$QualityReport -LogoPath $LogoPath -LogoScale $LogoScale -BottomText $BottomText -ForegroundColor $ForegroundColor -ForegroundColor2 $ForegroundColor2 -BackgroundColor $BackgroundColor -Rounded $Rounded -GradientType $GradientType -FrameText $FrameText -FrameColor $FrameColor -FontFamily $FontFamily -GoogleFont $GoogleFont
 } else {
     # Modo Batch (Por Archivo o Config)
     if (-not [string]::IsNullOrEmpty($InputFile) -or (Test-Path $IniPath)) {
-        Start-BatchProcessing -IniPath $IniPath -InputFileOverride $InputFile -OutputDirOverride $OutputDir -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData
+        Start-BatchProcessing -IniPath $IniPath -InputFileOverride $InputFile -OutputDirOverride $OutputDir -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $LogoPath -LogoScale $LogoScale -ForegroundColor $ForegroundColor -ForegroundColor2 $ForegroundColor2 -BackgroundColor $BackgroundColor -Rounded $Rounded -GradientType $GradientType -FrameText $FrameText -FrameColor $FrameColor -FontFamily $FontFamily -GoogleFont $GoogleFont -PdfUnico:$PdfUnico -PdfUnicoNombre $PdfUnicoNombre
     } else {
         Write-Status "`n  [QR] QR Generator FINAL - PowerShell Nativo`n"
         Write-Status "  Uso CLI QR:      .\QRCode.ps1 -Data 'Texto' -OutputPath 'out.png'"

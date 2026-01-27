@@ -150,6 +150,24 @@ Si prefieres no usar la línea de comandos de PowerShell, puedes usar el lanzado
 .\QRCode.ps1 -Data "Hola" -ForegroundColor "#0000FF" -BackgroundColor "#F0F0F0" -Rounded 0.3 -OutputPath "qr_estilo.svg"
 ```
 
+### Personalización Estética (CLI)
+```powershell
+# QR con degradado lineal, módulos redondeados y marco decorativo
+.\QRCode.ps1 -Data "Hola" -ForegroundColor "#0000FF" -ForegroundColor2 "#00FFFF" -GradientType "linear" -Rounded 0.5 -FrameText "ESCANEAME" -FrameColor "#0000FF" -OutputPath "qr_estilo.svg"
+
+# Uso de fuentes personalizadas de Google
+.\QRCode.ps1 -Data "Hola" -BottomText "Línea 1" -GoogleFont "Roboto" -FontFamily "Roboto, sans-serif" -OutputPath "qr_google_font.pdf"
+```
+
+### Procesamiento por Lotes (CLI)
+```powershell
+# Procesar una lista y generar un PDF único con todos los QRs
+.\QRCode.ps1 -InputFile "lista.tsv" -OutputDir "mis_qrs" -PdfUnico -PdfUnicoNombre "catalogo.pdf"
+
+# Procesar con personalización estética aplicada a todo el lote
+.\QRCode.ps1 -InputFile "lista.tsv" -ForegroundColor "#D40000" -Rounded 0.5 -PdfUnico
+```
+
 ### Formatos Estructurados (vCard / WiFi)
 ```powershell
 # Generar una vCard (Contacto)

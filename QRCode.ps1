@@ -51,6 +51,22 @@ $script:GS1_AI = @{
     '400'=@{L=0;T='ORDER'}; '8004'=@{L=0;T='GIAI'}; '90'=@{L=0;T='INTERNAL'}
 }
 
+# Utility to ensure numbers use dot as decimal separator (for SVG/CSS)
+function ToDot($val) {
+    if ($null -eq $val) { return "0" }
+    return [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, "{0}", $val)
+}
+
+# Utility to parse numbers from SVG/CSS (always expecting dot)
+function FromDot($val) {
+    if ([string]::IsNullOrWhiteSpace($val)) { return 0 }
+    $clean = $val -replace '[^\d.-]', ''
+    if ($clean -match "\.") {
+        return [double]::Parse($clean, [System.Globalization.CultureInfo]::InvariantCulture)
+    }
+    return [double]$clean
+}
+
 function GFMul($a,$b) { if($a -eq 0 -or $b -eq 0){return 0}; $s=$script:LOG[$a]+$script:LOG[$b]; if($s -ge 255){$s-=255}; return $script:EXP[$s] }
 function GFInv($a) { if($a -eq 0){return 0}; return $script:EXP[255 - $script:LOG[$a]] }
 function GFDiv($a,$b) { if($a -eq 0){return 0}; if($b -eq 0){throw "Div por cero"}; $s=$script:LOG[$a]-$script:LOG[$b]; if($s -lt 0){$s+=255}; return $script:EXP[$s] }
@@ -2210,54 +2226,181 @@ function ExportPng {
         [string]$logoPath = "",
         [int]$logoScale = 20,
         [string]$foregroundColor = "#000000",
-        [string]$backgroundColor = "#ffffff"
+        [string]$backgroundColor = "#ffffff",
+        [string[]]$bottomText = @(),
+        [string]$foregroundColor2 = "",
+        [double]$rounded = 0,
+        [string]$gradientType = "linear",
+        [string]$frameText = "",
+        [string]$frameColor = "",
+        [string]$fontFamily = "Arial, sans-serif",
+        [string]$googleFont = ""
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar PNG")) { return }
     Add-Type -AssemblyName System.Drawing
     
-    $imgSize = ($m.Size + $quiet * 2) * $scale
-    $bmp = New-Object Drawing.Bitmap $imgSize, $imgSize
+    $size = $m.Size
+    $baseUnits = $size + ($quiet * 2)
+    
+    # Calcular Frame
+    $frameSizeUnits = 0
+    if ($frameText) { $frameSizeUnits = 4 }
+    
+    # Calcular altura adicional para texto
+    $textHeightUnits = 0
+    $lineHeightUnits = 3
+    $textPaddingUnits = 1
+    if ($bottomText.Count -gt 0) {
+        $textHeightUnits = ($bottomText.Count * $lineHeightUnits) + $textPaddingUnits
+    }
+    
+    $wUnits = $baseUnits + ($frameSizeUnits * 2)
+    $hUnits = $baseUnits + ($frameSizeUnits * 2) + $textHeightUnits
+    
+    $widthPx = $wUnits * $scale
+    $heightPx = $hUnits * $scale
+    
+    $bmp = [Drawing.Bitmap]::new([int]$widthPx, [int]$heightPx)
     $g = [Drawing.Graphics]::FromImage($bmp)
+    $g.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.TextRenderingHint = [Drawing.Text.TextRenderingHint]::AntiAlias
     
     $fgColor = [Drawing.ColorTranslator]::FromHtml($foregroundColor)
+    $fgColor2 = if ($foregroundColor2) { [Drawing.ColorTranslator]::FromHtml($foregroundColor2) } else { $fgColor }
     $bgColor = [Drawing.ColorTranslator]::FromHtml($backgroundColor)
+    $fColor = if ($frameColor) { [Drawing.ColorTranslator]::FromHtml($frameColor) } else { $fgColor }
     
     $g.Clear($bgColor)
-    $fgBrush = New-Object Drawing.SolidBrush($fgColor)
+    
+    # Dibujar Marco
+    if ($frameText) {
+        $frameBrush = [Drawing.SolidBrush]::new($fColor)
+        $g.FillRectangle($frameBrush, 0, 0, [float]$widthPx, [float](($baseUnits + $frameSizeUnits * 2) * $scale))
+        $frameBrush.Dispose()
+        
+        # Espacio para el QR
+        $bgBrush = [Drawing.SolidBrush]::new($bgColor)
+        $g.FillRectangle($bgBrush, [float]($frameSizeUnits * $scale), [float]($frameSizeUnits * $scale), [float]($baseUnits * $scale), [float]($baseUnits * $scale))
+        $bgBrush.Dispose()
+        
+        # Texto del marco
+        $fFontSize = $frameSizeUnits * $scale * 0.6
+        $fontName = ($fontFamily -split ',')[0].Trim().Replace("'", "").Replace('"', "")
+        try {
+            $font = [Drawing.Font]::new($fontName, [float]$fFontSize, [Drawing.FontStyle]::Bold)
+        } catch {
+            $font = [Drawing.Font]::new("Arial", [float]$fFontSize, [Drawing.FontStyle]::Bold)
+        }
+        $sf = [Drawing.StringFormat]::new()
+        $sf.Alignment = [Drawing.StringAlignment]::Center
+        $sf.LineAlignment = [Drawing.StringAlignment]::Center
+        
+        $textBrush = [Drawing.SolidBrush]::new($bgColor)
+        $rectFrameText = [Drawing.RectangleF]::new(0, 0, [float]$widthPx, [float]($frameSizeUnits * $scale))
+        $g.DrawString($frameText, $font, $textBrush, $rectFrameText, $sf)
+        
+        $textBrush.Dispose()
+        $font.Dispose()
+    }
+    
+    $qrOffX = $frameSizeUnits * $scale
+    $qrOffY = $frameSizeUnits * $scale
+    
+    # Calcular área del logo para máscara
+    $logoMask = $null
+    if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
+        $lSizeUnits = ($baseUnits * $logoScale) / 100
+        $lPosUnits = ($baseUnits - $lSizeUnits) / 2
+        $margin = 0.5
+        $logoMask = @{ 
+            x1 = ($lPosUnits - $margin) * $scale; 
+            y1 = ($lPosUnits - $margin) * $scale; 
+            x2 = ($lPosUnits + $lSizeUnits + $margin) * $scale; 
+            y2 = ($lPosUnits + $lSizeUnits + $margin) * $scale 
+        }
+    }
+    
+    # Preparar Pincel (Degradado o Sólido)
+    $qrBrush = if ($foregroundColor2) {
+        $qrRect = [Drawing.RectangleF]::new([float]$qrOffX, [float]$qrOffY, [float]($baseUnits * $scale), [float]($baseUnits * $scale))
+        if ($gradientType -eq "radial") {
+            $pathBrush = [Drawing.Drawing2D.GraphicsPath]::new()
+            $pathBrush.AddEllipse($qrRect)
+            $pBrush = [Drawing.Drawing2D.PathGradientBrush]::new($pathBrush)
+            $pBrush.CenterColor = $fgColor
+            $pBrush.SurroundColors = @($fgColor2)
+            $pBrush
+        } else {
+            [Drawing.Drawing2D.LinearGradientBrush]::new($qrRect, $fgColor, $fgColor2, [float]45.0)
+        }
+    } else {
+        [Drawing.SolidBrush]::new($fgColor)
+    }
     
     for ($r = 0; $r -lt $m.Size; $r++) {
         for ($c = 0; $c -lt $m.Size; $c++) {
+            $x = ($c + $quiet) * $scale
+            $y = ($r + $quiet) * $scale
+            
+            if ($logoMask -and ($x + $qrOffX) -ge ($logoMask.x1 + $qrOffX) -and ($x + $qrOffX) -le ($logoMask.x2 + $qrOffX) -and ($y + $qrOffY) -ge ($logoMask.y1 + $qrOffY) -and ($y + $qrOffY) -le ($logoMask.y2 + $qrOffY)) { continue }
+            
             if ((GetM $m $r $c) -eq 1) {
-                $x = ($c + $quiet) * $scale
-                $y = ($r + $quiet) * $scale
-                $g.FillRectangle($fgBrush, $x, $y, $scale, $scale)
+                if ($rounded -gt 0) {
+                    $g.FillEllipse($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                } else {
+                    $g.FillRectangle($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                }
             }
         }
     }
-
-    # Insertar Logo si existe (Solo PNG soportado para salida PNG nativa)
+    
+    # Texto debajo
+    if ($bottomText.Count -gt 0) {
+        $fontSize = $lineHeightUnits * $scale * 0.7
+        $currentY = ($baseUnits + $frameSizeUnits * 2) * $scale
+        $fontName = ($fontFamily -split ',')[0].Trim().Replace("'", "").Replace('"', "")
+        try {
+            $font = [Drawing.Font]::new($fontName, [float]$fontSize)
+        } catch {
+            $font = [Drawing.Font]::new("Arial", [float]$fontSize)
+        }
+        $sf = [Drawing.StringFormat]::new()
+        $sf.Alignment = [Drawing.StringAlignment]::Center
+        
+        $textBrush = [Drawing.SolidBrush]::new($fgColor)
+        foreach ($line in $bottomText) {
+            $rectText = [Drawing.RectangleF]::new(0, [float]($currentY + $textPaddingUnits * $scale), [float]$widthPx, [float]($lineHeightUnits * $scale))
+            $g.DrawString($line, $font, $textBrush, $rectText, $sf)
+            $currentY += $lineHeightUnits * $scale
+        }
+        $textBrush.Dispose()
+        $font.Dispose()
+    }
+    
+    # Insertar Logo
     if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
         $logoExt = [System.IO.Path]::GetExtension($logoPath).ToLower()
         if ($logoExt -eq ".png") {
             try {
                 $logoBmp = [Drawing.Image]::FromFile($logoPath)
-                $lSize = ($imgSize * $logoScale) / 100
-                $lPos = ($imgSize - $lSize) / 2
+                $lSize = ($baseUnits * $logoScale / 100) * $scale
+                $lPosRel = ($baseUnits * $scale - $lSize) / 2
+                $lx = $qrOffX + $lPosRel
+                $ly = $qrOffY + $lPosRel
                 
-                # Fondo blanco detrás del logo (Podría ser el fondo del QR si se prefiere)
-                $g.FillRectangle(New-Object Drawing.SolidBrush($bgColor), $lPos, $lPos, $lSize, $lSize)
+                $bgBrush = [Drawing.SolidBrush]::new($bgColor)
+                $g.FillRectangle($bgBrush, [float]$lx, [float]$ly, [float]$lSize, [float]$lSize)
+                $bgBrush.Dispose()
                 
-                $g.DrawImage($logoBmp, $lPos, $lPos, $lSize, $lSize)
+                $g.DrawImage($logoBmp, [float]$lx, [float]$ly, [float]$lSize, [float]$lSize)
                 $logoBmp.Dispose()
             } catch {
-                Write-Warning "No se pudo procesar el logo PNG en la salida PNG: $_"
+                Write-Warning "No se pudo procesar el logo PNG: $_"
             }
-        } else {
-            Write-Warning "El logo SVG no se puede incrustar directamente en una salida PNG. Use formato .svg para el QR."
         }
     }
     
-    $fgBrush.Dispose()
+    $qrBrush.Dispose()
     $g.Dispose()
     $bmp.Save($path, [Drawing.Imaging.ImageFormat]::Png)
     $bmp.Dispose()
@@ -2273,56 +2416,182 @@ function ExportPngRect {
         [string]$logoPath = "",
         [int]$logoScale = 20,
         [string]$foregroundColor = "#000000",
-        [string]$backgroundColor = "#ffffff"
+        [string]$backgroundColor = "#ffffff",
+        [string[]]$bottomText = @(),
+        [string]$foregroundColor2 = "",
+        [double]$rounded = 0,
+        [string]$gradientType = "linear",
+        [string]$frameText = "",
+        [string]$frameColor = "",
+        [string]$fontFamily = "Arial, sans-serif",
+        [string]$googleFont = ""
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar PNG")) { return }
     Add-Type -AssemblyName System.Drawing
-    $imgW = ($m.Width + $quiet * 2) * $scale
-    $imgH = ($m.Height + $quiet * 2) * $scale
-    $bmp = New-Object Drawing.Bitmap $imgW, $imgH
+    
+    $wUnits = $m.Width + ($quiet * 2)
+    $hUnits = $m.Height + ($quiet * 2)
+    
+    # Calcular Frame
+    $frameSizeUnits = 0
+    if ($frameText) { $frameSizeUnits = 4 }
+    
+    # Calcular altura adicional para texto
+    $textHeightUnits = 0
+    $lineHeightUnits = 3
+    $textPaddingUnits = 1
+    if ($bottomText.Count -gt 0) {
+        $textHeightUnits = ($bottomText.Count * $lineHeightUnits) + $textPaddingUnits
+    }
+    
+    $finalWUnits = $wUnits + ($frameSizeUnits * 2)
+    $finalHUnits = $hUnits + ($frameSizeUnits * 2) + $textHeightUnits
+    
+    $widthPx = $finalWUnits * $scale
+    $heightPx = $finalHUnits * $scale
+    
+    $bmp = [Drawing.Bitmap]::new([int]$widthPx, [int]$heightPx)
     $g = [Drawing.Graphics]::FromImage($bmp)
+    $g.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.TextRenderingHint = [Drawing.Text.TextRenderingHint]::AntiAlias
     
     $fgColor = [Drawing.ColorTranslator]::FromHtml($foregroundColor)
+    $fgColor2 = if ($foregroundColor2) { [Drawing.ColorTranslator]::FromHtml($foregroundColor2) } else { $fgColor }
     $bgColor = [Drawing.ColorTranslator]::FromHtml($backgroundColor)
+    $fColor = if ($frameColor) { [Drawing.ColorTranslator]::FromHtml($frameColor) } else { $fgColor }
     
     $g.Clear($bgColor)
-    $fgBrush = New-Object Drawing.SolidBrush($fgColor)
+    
+    # Dibujar Marco
+    if ($frameText) {
+        $frameBrush = [Drawing.SolidBrush]::new($fColor)
+        $g.FillRectangle($frameBrush, 0, 0, [float]$widthPx, [float](($hUnits + $frameSizeUnits * 2) * $scale))
+        $frameBrush.Dispose()
+        
+        # Espacio para el QR
+        $bgBrush = [Drawing.SolidBrush]::new($bgColor)
+        $g.FillRectangle($bgBrush, [float]($frameSizeUnits * $scale), [float]($frameSizeUnits * $scale), [float]($wUnits * $scale), [float]($hUnits * $scale))
+        $bgBrush.Dispose()
+        
+        # Texto del marco
+        $fFontSize = $frameSizeUnits * $scale * 0.6
+        $fontName = ($fontFamily -split ',')[0].Trim().Replace("'", "").Replace('"', "")
+        try {
+            $font = [Drawing.Font]::new($fontName, [float]$fFontSize, [Drawing.FontStyle]::Bold)
+        } catch {
+            $font = [Drawing.Font]::new("Arial", [float]$fFontSize, [Drawing.FontStyle]::Bold)
+        }
+        $sf = [Drawing.StringFormat]::new()
+        $sf.Alignment = [Drawing.StringAlignment]::Center
+        $sf.LineAlignment = [Drawing.StringAlignment]::Center
+        
+        $textBrush = [Drawing.SolidBrush]::new($bgColor)
+        $rectFrameText = [Drawing.RectangleF]::new(0, 0, [float]$widthPx, [float]($frameSizeUnits * $scale))
+        $g.DrawString($frameText, $font, $textBrush, $rectFrameText, $sf)
+        
+        $textBrush.Dispose()
+        $font.Dispose()
+    }
+    
+    $qrOffX = $frameSizeUnits * $scale
+    $qrOffY = $frameSizeUnits * $scale
+    
+    # Calcular área del logo para máscara
+    $logoMask = $null
+    if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
+        # Para rMQR, centramos el logo en la parte superior (QR real)
+        $lSizeUnits = ([math]::Min($wUnits, $hUnits) * $logoScale) / 100
+        $lPosXUnits = ($wUnits - $lSizeUnits) / 2
+        $lPosYUnits = ($hUnits - $lSizeUnits) / 2
+        $margin = 0.5
+        $logoMask = @{ 
+            x1 = ($lPosXUnits - $margin) * $scale; 
+            y1 = ($lPosYUnits - $margin) * $scale; 
+            x2 = ($lPosXUnits + $lSizeUnits + $margin) * $scale; 
+            y2 = ($lPosYUnits + $lSizeUnits + $margin) * $scale 
+        }
+    }
+    
+    # Preparar Pincel (Degradado o Sólido)
+    $qrBrush = if ($foregroundColor2) {
+        $qrRect = [Drawing.RectangleF]::new([float]$qrOffX, [float]$qrOffY, [float]($wUnits * $scale), [float]($hUnits * $scale))
+        if ($gradientType -eq "radial") {
+            $pathBrush = [Drawing.Drawing2D.GraphicsPath]::new()
+            $pathBrush.AddEllipse($qrRect)
+            $pBrush = [Drawing.Drawing2D.PathGradientBrush]::new($pathBrush)
+            $pBrush.CenterColor = $fgColor
+            $pBrush.SurroundColors = @($fgColor2)
+            $pBrush
+        } else {
+            [Drawing.Drawing2D.LinearGradientBrush]::new($qrRect, $fgColor, $fgColor2, [float]45.0)
+        }
+    } else {
+        [Drawing.SolidBrush]::new($fgColor)
+    }
     
     for ($r = 0; $r -lt $m.Height; $r++) {
         for ($c = 0; $c -lt $m.Width; $c++) {
-            if ($m.Mod["$r,$c"] -eq 1) {
-                $x = ($c + $quiet) * $scale
-                $y = ($r + $quiet) * $scale
-                $g.FillRectangle($fgBrush, $x, $y, $scale, $scale)
+            $x = ($c + $quiet) * $scale
+            $y = ($r + $quiet) * $scale
+            
+            if ($logoMask -and ($x + $qrOffX) -ge ($logoMask.x1 + $qrOffX) -and ($x + $qrOffX) -le ($logoMask.x2 + $qrOffX) -and ($y + $qrOffY) -ge ($logoMask.y1 + $qrOffY) -and ($y + $qrOffY) -le ($logoMask.y2 + $qrOffY)) { continue }
+            
+            if ((GetM $m $r $c) -eq 1) {
+                if ($rounded -gt 0) {
+                    $g.FillEllipse($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                } else {
+                    $g.FillRectangle($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                }
             }
         }
     }
-
-    # Insertar Logo si existe
+    
+    # Texto debajo
+    if ($bottomText.Count -gt 0) {
+        $fontSize = $lineHeightUnits * $scale * 0.7
+        $currentY = ($hUnits + $frameSizeUnits * 2) * $scale
+        $fontName = ($fontFamily -split ',')[0].Trim().Replace("'", "").Replace('"', "")
+        try {
+            $font = [Drawing.Font]::new($fontName, [float]$fontSize)
+        } catch {
+            $font = [Drawing.Font]::new("Arial", [float]$fontSize)
+        }
+        $sf = [Drawing.StringFormat]::new()
+        $sf.Alignment = [Drawing.StringAlignment]::Center
+        
+        $textBrush = [Drawing.SolidBrush]::new($fgColor)
+        foreach ($line in $bottomText) {
+            $rectText = [Drawing.RectangleF]::new(0, [float]($currentY + $textPaddingUnits * $scale), [float]$widthPx, [float]($lineHeightUnits * $scale))
+            $g.DrawString($line, $font, $textBrush, $rectText, $sf)
+            $currentY += $lineHeightUnits * $scale
+        }
+        $textBrush.Dispose()
+        $font.Dispose()
+    }
+    
+    # Insertar Logo
     if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
         $logoExt = [System.IO.Path]::GetExtension($logoPath).ToLower()
         if ($logoExt -eq ".png") {
             try {
                 $logoBmp = [Drawing.Image]::FromFile($logoPath)
-                $minSide = if ($imgW -lt $imgH) { $imgW } else { $imgH }
-                $lSize = ($minSide * $logoScale) / 100
-                $lx = ($imgW - $lSize) / 2
-                $ly = ($imgH - $lSize) / 2
+                $lSize = ([math]::Min($wUnits, $hUnits) * $logoScale / 100) * $scale
+                $lx = $qrOffX + ($wUnits * $scale - $lSize) / 2
+                $ly = $qrOffY + ($hUnits * $scale - $lSize) / 2
                 
-                # Fondo blanco detrás del logo
-                $g.FillRectangle(New-Object Drawing.SolidBrush($bgColor), $lx, $ly, $lSize, $lSize)
+                $bgBrush = [Drawing.SolidBrush]::new($bgColor)
+                $g.FillRectangle($bgBrush, [float]$lx, [float]$ly, [float]$lSize, [float]$lSize)
+                $bgBrush.Dispose()
                 
-                $g.DrawImage($logoBmp, $lx, $ly, $lSize, $lSize)
+                $g.DrawImage($logoBmp, [float]$lx, [float]$ly, [float]$lSize, [float]$lSize)
                 $logoBmp.Dispose()
             } catch {
-                Write-Warning "No se pudo procesar el logo PNG en la salida PNG: $_"
+                Write-Warning "No se pudo procesar el logo PNG: $_"
             }
-        } else {
-            Write-Warning "El logo SVG no se puede incrustar directamente en una salida PNG. Use formato .svg para el QR."
         }
     }
-
-    $fgBrush.Dispose()
+    
+    $qrBrush.Dispose()
     $g.Dispose()
     $bmp.Save($path, [Drawing.Imaging.ImageFormat]::Png)
     $bmp.Dispose()
@@ -2342,11 +2611,21 @@ function ExportSvg {
         [string]$foregroundColor2 = "",
         [string]$backgroundColor = "#ffffff",
         [double]$rounded = 0,
-        [string]$gradientType = "linear" # linear o radial
+        [string]$gradientType = "linear",
+        [string]$frameText = "",
+        [string]$frameColor = "",
+        [string]$fontFamily = "Arial, sans-serif",
+        [string]$googleFont = ""
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar SVG")) { return }
     $size = $m.Size
-    $wUnits = $size + ($quiet * 2)
+    $baseUnits = $size + ($quiet * 2)
+    
+    # Calcular Frame
+    $frameSize = 0
+    if ($frameText) { $frameSize = 4 } # Espacio para el marco
+    
+    $wUnits = $baseUnits + ($frameSize * 2)
     
     # Calcular altura adicional para texto
     $textHeight = 0
@@ -2356,17 +2635,23 @@ function ExportSvg {
         $textHeight = ($bottomText.Count * $lineHeight) + $textPadding
     }
     
-    $hUnits = $wUnits + $textHeight
+    $hUnits = $baseUnits + ($frameSize * 2) + $textHeight
     $widthPx = $wUnits * $scale
     $heightPx = $hUnits * $scale
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append("<?xml version=""1.0"" encoding=""UTF-8""?>")
-    [void]$sb.Append("<svg xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" width=""$widthPx"" height=""$heightPx"" viewBox=""0 0 $wUnits $hUnits"" shape-rendering=""crispEdges"">")
+    [void]$sb.Append("<svg xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" width=""$(ToDot $widthPx)"" height=""$(ToDot $heightPx)"" viewBox=""0 0 $(ToDot $wUnits) $(ToDot $hUnits)"" shape-rendering=""crispEdges"">")
+    
+    # Fuentes Personalizadas
+    [void]$sb.Append("<defs>")
+    if ($googleFont) {
+        [void]$sb.Append("<style>@import url('https://fonts.googleapis.com/css2?family=$($googleFont.Replace(' ', '+'))&amp;display=swap');</style>")
+        $fontFamily = "'$googleFont', $fontFamily"
+    }
     
     # Definir Degradado si existe
     $fillColor = $foregroundColor
     if ($foregroundColor2) {
-        [void]$sb.Append("<defs>")
         if ($gradientType -eq "radial") {
             [void]$sb.Append("<radialGradient id=""qrgrad"" cx=""50%"" cy=""50%"" r=""50%"">")
         } else {
@@ -2375,38 +2660,49 @@ function ExportSvg {
         [void]$sb.Append("<stop offset=""0%"" stop-color=""$foregroundColor""/>")
         [void]$sb.Append("<stop offset=""100%"" stop-color=""$foregroundColor2""/>")
         if ($gradientType -eq "radial") { [void]$sb.Append("</radialGradient>") } else { [void]$sb.Append("</linearGradient>") }
-        [void]$sb.Append("</defs>")
-        $fillColor = "url(#qrgrad)"
+    }
+    [void]$sb.Append("</defs>")
+    if ($foregroundColor2) { $fillColor = "url(#qrgrad)" }
+
+    # Fondo
+    [void]$sb.Append("<rect width=""$(ToDot $wUnits)"" height=""$(ToDot $hUnits)"" fill=""$backgroundColor""/>")
+    
+    # Marco Decorativo
+    if ($frameText) {
+        $fColor = if ($frameColor) { $frameColor } else { $foregroundColor }
+        # Rectángulo del marco
+        [void]$sb.Append("<rect x=""0"" y=""0"" width=""$(ToDot $wUnits)"" height=""$(ToDot ($baseUnits + $frameSize * 2))"" fill=""$fColor""/>")
+        # Espacio blanco para el QR dentro del marco
+        [void]$sb.Append("<rect x=""$(ToDot $frameSize)"" y=""$(ToDot $frameSize)"" width=""$(ToDot $baseUnits)"" height=""$(ToDot $baseUnits)"" fill=""$backgroundColor""/>")
+        # Texto del marco (arriba)
+        $fFontSize = $frameSize * 0.6
+        $escapedFrameText = [System.Security.SecurityElement]::Escape($frameText)
+        [void]$sb.Append("<text x=""$(ToDot ($wUnits/2))"" y=""$(ToDot ($frameSize/2 + $fFontSize/3))"" font-family=""$fontFamily"" font-size=""$(ToDot $fFontSize)"" font-weight=""bold"" text-anchor=""middle"" fill=""$backgroundColor"">$escapedFrameText</text>")
     }
 
-    [void]$sb.Append("<rect width=""$wUnits"" height=""$hUnits"" fill=""$backgroundColor""/>")
-    
-    # Calcular área del logo para máscara (evitar dibujar módulos debajo)
+    $qrOffX = $frameSize
+    $qrOffY = $frameSize
+
+    # Calcular área del logo para máscara
     $logoMask = $null
     if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
-        $lSize = ($wUnits * $logoScale) / 100
-        $lPos = ($wUnits - $lSize) / 2
-        # Margen pequeño para que el logo respire
+        $lSize = ($baseUnits * $logoScale) / 100
+        $lPos = ($baseUnits - $lSize) / 2
         $margin = 0.5
         $logoMask = @{ x1 = $lPos - $margin; y1 = $lPos - $margin; x2 = $lPos + $lSize + $margin; y2 = $lPos + $lSize + $margin }
     }
 
-    [void]$sb.Append("<g fill=""$fillColor"">")
+    [void]$sb.Append("<g fill=""$fillColor"" transform=""translate($(ToDot $qrOffX), $(ToDot $qrOffY))"">")
     
-    $rectAttr = if ($rounded -gt 0) { " rx=""$rounded"" ry=""$rounded""" } else { "" }
+    $rectAttr = if ($rounded -gt 0) { " rx=""$(ToDot $rounded)"" ry=""$(ToDot $rounded)""" } else { "" }
     
     for ($r = 0; $r -lt $m.Size; $r++) {
         for ($c = 0; $c -lt $m.Size; $c++) {
             $x = $c + $quiet
             $y = $r + $quiet
-            
-            # Saltar si está en la zona del logo
-            if ($logoMask -and $x -ge $logoMask.x1 -and $x -le $logoMask.x2 -and $y -ge $logoMask.y1 -and $y -le $logoMask.y2) {
-                continue
-            }
-
+            if ($logoMask -and $x -ge $logoMask.x1 -and $x -le $logoMask.x2 -and $y -ge $logoMask.y1 -and $y -le $logoMask.y2) { continue }
             if ((GetM $m $r $c) -eq 1) {
-                [void]$sb.Append("<rect x=""$x"" y=""$y"" width=""1"" height=""1""$rectAttr/>")
+                [void]$sb.Append("<rect x=""$(ToDot $x)"" y=""$(ToDot $y)"" width=""1"" height=""1""$rectAttr/>")
             }
         }
     }
@@ -2415,66 +2711,51 @@ function ExportSvg {
     # Insertar Texto debajo
     if ($bottomText.Count -gt 0) {
         $fontSize = $lineHeight * 0.7
-        $currentY = $wUnits # Empezar justo después del QR (incluyendo quiet zone)
+        $currentY = $baseUnits + ($frameSize * 2)
         foreach ($line in $bottomText) {
             $escapedText = [System.Security.SecurityElement]::Escape($line)
-            # Centrar texto: x = wUnits / 2
-            [void]$sb.Append("<text x=""$($wUnits/2)"" y=""$($currentY + $textPadding + $fontSize)"" font-family=""Arial, sans-serif"" font-size=""$fontSize"" text-anchor=""middle"" fill=""$foregroundColor"">$escapedText</text>")
+            [void]$sb.Append("<text x=""$(ToDot ($wUnits/2))"" y=""$(ToDot ($currentY + $textPadding + $fontSize))"" font-family=""$fontFamily"" font-size=""$(ToDot $fontSize)"" text-anchor=""middle"" fill=""$foregroundColor"">$escapedText</text>")
             $currentY += $lineHeight
         }
     }
 
-    # Insertar Logo si existe
+    # Insertar Logo
     if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
         $logoExt = [System.IO.Path]::GetExtension($logoPath).ToLower()
-        $lSize = ($wUnits * $logoScale) / 100
-        $lPos = ($wUnits - $lSize) / 2
+        $lSize = ($baseUnits * $logoScale) / 100
+        $lPosRel = ($baseUnits - $lSize) / 2
+        $lx = $qrOffX + $lPosRel
+        $ly = $qrOffY + $lPosRel
         
         if ($logoExt -eq ".svg") {
             try {
                 [xml]$logoSvg = Get-Content $logoPath
                 $root = $logoSvg.DocumentElement
-                
-                # Intentar obtener viewBox original del logo
                 $vBox = $root.viewBox
-                $lW = if ($root.width) { [double]($root.width -replace '[^\d.]','') } else { 100 }
-                $lH = if ($root.height) { [double]($root.height -replace '[^\d.]','') } else { 100 }
-                
+                $lW = if ($root.width) { FromDot $root.width } else { 100 }
+                $lH = if ($root.height) { FromDot $root.height } else { 100 }
                 if ($vBox) {
                     $parts = $vBox -split '[ ,]+' | Where-Object { $_ -ne "" }
-                    if ($parts.Count -ge 4) {
-                        $lW = [double]$parts[2]
-                        $lH = [double]$parts[3]
-                    }
+                    if ($parts.Count -ge 4) { $lW = FromDot $parts[2]; $lH = FromDot $parts[3] }
                 }
-                
-                # Escalar logo para que quepa en lSize manteniendo aspecto
                 $maxDim = if ($lW -gt $lH) { $lW } else { $lH }
                 $scaleFactorNum = $lSize / $maxDim
-                $scaleFactor = [math]::Round($scaleFactorNum, 6).ToString().Replace(",", ".")
-                
-                # Calcular centrado real basado en dimensiones finales
+                $scaleFactor = ToDot ([math]::Round($scaleFactorNum, 6))
                 $finalW = $lW * $scaleFactorNum
                 $finalH = $lH * $scaleFactorNum
-                $offX = ($wUnits - $finalW) / 2
-                $offY = ($hUnits - $finalH) / 2
-                
-                # Ajustar el fondo blanco al tamaño real del logo
-                [void]$sb.Append("<rect x=""$offX"" y=""$offY"" width=""$finalW"" height=""$finalH"" fill=""#ffffff""/>")
-
+                $offX = $qrOffX + ($baseUnits - $finalW) / 2
+                $offY = $qrOffY + ($baseUnits - $finalH) / 2
+                [void]$sb.Append("<rect x=""$(ToDot $offX)"" y=""$(ToDot $offY)"" width=""$(ToDot $finalW)"" height=""$(ToDot $finalH)"" fill=""$backgroundColor""/>")
                 $inner = $root.InnerXml
-                [void]$sb.Append("<g transform=""translate($offX, $offY) scale($scaleFactor)"">$inner</g>")
-            } catch {
-                Write-Warning "No se pudo procesar el logo SVG: $_"
-            }
+                [void]$sb.Append("<g transform=""translate($(ToDot $offX), $(ToDot $offY)) scale($(ToDot $scaleFactor))"">$inner</g>")
+            } catch { Write-Warning "No se pudo procesar el logo SVG: $_" }
         } elseif ($logoExt -eq ".png") {
             try {
                 $bytes = [System.IO.File]::ReadAllBytes($logoPath)
                 $b64 = [System.Convert]::ToBase64String($bytes)
-                [void]$sb.Append("<image x=""$lPos"" y=""$lPos"" width=""$lSize"" height=""$lSize"" xlink:href=""data:image/png;base64,$b64"" />")
-            } catch {
-                Write-Warning "No se pudo procesar el logo PNG: $_"
-            }
+                [void]$sb.Append("<rect x=""$(ToDot $lx)"" y=""$(ToDot $ly)"" width=""$(ToDot $lSize)"" height=""$(ToDot $lSize)"" fill=""$backgroundColor""/>")
+                [void]$sb.Append("<image x=""$(ToDot $lx)"" y=""$(ToDot $ly)"" width=""$(ToDot $lSize)"" height=""$(ToDot $lSize)"" xlink:href=""data:image/png;base64,$b64"" />")
+            } catch { Write-Warning "No se pudo procesar el logo PNG: $_" }
         }
     }
 
@@ -2495,37 +2776,30 @@ function ExportPdf {
         [string]$foregroundColor2 = "",
         [string]$backgroundColor = "#ffffff",
         [double]$rounded = 0,
-        [string]$gradientType = "linear"
+        [string]$gradientType = "linear",
+        [string]$frameText = "",
+        [string]$frameColor = "",
+        [string]$fontFamily = "Arial, sans-serif",
+        [string]$googleFont = ""
     )
     # Generar contenido SVG
     $tempSvg = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid().ToString() + ".svg")
     $tempHtml = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid().ToString() + ".html")
     
-    # Detectar si es un QR rectangular o cuadrado para obtener dimensiones
+    # Exportar SVG con todos los parámetros
     if ($null -ne $m.Width) {
-        ExportSvgRect -m $m -path $tempSvg -scale $scale -quiet $quiet -logoPath $logoPath -logoScale $logoScale -bottomText $bottomText -foregroundColor $foregroundColor -foregroundColor2 $foregroundColor2 -backgroundColor $backgroundColor -rounded $rounded -gradientType $gradientType
-        $wUnits = $m.Width + ($quiet * 2)
-        $hUnits_qr = $m.Height + ($quiet * 2)
+        ExportSvgRect -m $m -path $tempSvg -scale $scale -quiet $quiet -logoPath $logoPath -logoScale $logoScale -bottomText $bottomText -foregroundColor $foregroundColor -foregroundColor2 $foregroundColor2 -backgroundColor $backgroundColor -rounded $rounded -gradientType $gradientType -frameText $frameText -frameColor $frameColor -fontFamily $fontFamily -googleFont $googleFont
     } else {
-        ExportSvg -m $m -path $tempSvg -scale $scale -quiet $quiet -logoPath $logoPath -logoScale $logoScale -bottomText $bottomText -foregroundColor $foregroundColor -foregroundColor2 $foregroundColor2 -backgroundColor $backgroundColor -rounded $rounded -gradientType $gradientType
-        $wUnits = $m.Size + ($quiet * 2)
-        $hUnits_qr = $wUnits
+        ExportSvg -m $m -path $tempSvg -scale $scale -quiet $quiet -logoPath $logoPath -logoScale $logoScale -bottomText $bottomText -foregroundColor $foregroundColor -foregroundColor2 $foregroundColor2 -backgroundColor $backgroundColor -rounded $rounded -gradientType $gradientType -frameText $frameText -frameColor $frameColor -fontFamily $fontFamily -googleFont $googleFont
     }
 
-    # Calcular altura adicional para texto (debe coincidir con la lógica en ExportSvg/ExportSvgRect)
-    $textHeight = 0
-    $lineHeight = 3
-    $textPadding = 1
-    if ($bottomText.Count -gt 0) {
-        $textHeight = ($bottomText.Count * $lineHeight) + $textPadding
-    }
-    $hUnits = $hUnits_qr + $textHeight
-
+    if (-not (Test-Path $tempSvg)) { throw "No se pudo generar el SVG temporal para el PDF." }
     $svgContent = Get-Content $tempSvg -Raw
     
-    # Calcular dimensiones en píxeles para el CSS
-    $widthPx = $wUnits * $scale
-    $heightPx = $hUnits * $scale
+    # Extraer dimensiones reales del SVG generado
+    [xml]$svgXml = $svgContent
+    $widthPx = FromDot $svgXml.svg.width
+    $heightPx = FromDot $svgXml.svg.height
 
     # Crear un HTML temporal que ajusta el tamaño de la página al tamaño exacto del QR
     # @page { size: width height; } ajusta el papel al contenido
@@ -2536,7 +2810,7 @@ function ExportPdf {
 <style>
     @page { 
         margin: 0; 
-        size: $($widthPx)px $($heightPx)px; 
+        size: $(ToDot $widthPx)px $(ToDot $heightPx)px; 
     }
     body { 
         margin: 0; 
@@ -2545,8 +2819,8 @@ function ExportPdf {
         background: white;
     }
     svg { 
-        width: $($widthPx)px; 
-        height: $($heightPx)px; 
+        width: $(ToDot $widthPx)px; 
+        height: $(ToDot $heightPx)px; 
         display: block;
     }
 </style>
@@ -2613,30 +2887,47 @@ function ExportSvgRect {
         [string]$foregroundColor2 = "",
         [string]$backgroundColor = "#ffffff",
         [double]$rounded = 0,
-        [string]$gradientType = "linear"
+        [string]$gradientType = "linear",
+        [string]$frameText = "",
+        [string]$frameColor = "",
+        [string]$fontFamily = "Arial, sans-serif",
+        [string]$googleFont = ""
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar SVG")) { return }
-    $wUnits = $m.Width + ($quiet * 2)
+    $baseW = $m.Width + ($quiet * 2)
+    $baseH = $m.Height + ($quiet * 2)
+    
+    # Calcular Frame
+    $frameSize = 0
+    if ($frameText) { $frameSize = 4 }
+    
+    $wUnits = $baseW + ($frameSize * 2)
     
     # Calcular altura adicional para texto
     $textHeight = 0
-    $lineHeight = 3 # Altura en unidades de módulo
-    $textPadding = 1 # Padding entre QR y texto
+    $lineHeight = 3
+    $textPadding = 1
     if ($bottomText.Count -gt 0) {
         $textHeight = ($bottomText.Count * $lineHeight) + $textPadding
     }
     
-    $hUnits = $m.Height + ($quiet * 2) + $textHeight
+    $hUnits = $baseH + ($frameSize * 2) + $textHeight
     $widthPx = $wUnits * $scale
     $heightPx = $hUnits * $scale
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append("<?xml version=""1.0"" encoding=""UTF-8""?>")
-    [void]$sb.Append("<svg xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" width=""$widthPx"" height=""$heightPx"" viewBox=""0 0 $wUnits $hUnits"" shape-rendering=""crispEdges"">")
+    [void]$sb.Append("<svg xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" width=""$(ToDot $widthPx)"" height=""$(ToDot $heightPx)"" viewBox=""0 0 $(ToDot $wUnits) $(ToDot $hUnits)"" shape-rendering=""crispEdges"">")
     
-    # Definir Degradado si existe
+    # Fuentes Personalizadas
+    [void]$sb.Append("<defs>")
+    if ($googleFont) {
+        [void]$sb.Append("<style>@import url('https://fonts.googleapis.com/css2?family=$($googleFont.Replace(' ', '+'))&amp;display=swap');</style>")
+        $fontFamily = "'$googleFont', $fontFamily"
+    }
+    
+    # Definir Degradado
     $fillColor = $foregroundColor
     if ($foregroundColor2) {
-        [void]$sb.Append("<defs>")
         if ($gradientType -eq "radial") {
             [void]$sb.Append("<radialGradient id=""qrgrad"" cx=""50%"" cy=""50%"" r=""50%"">")
         } else {
@@ -2645,40 +2936,48 @@ function ExportSvgRect {
         [void]$sb.Append("<stop offset=""0%"" stop-color=""$foregroundColor""/>")
         [void]$sb.Append("<stop offset=""100%"" stop-color=""$foregroundColor2""/>")
         if ($gradientType -eq "radial") { [void]$sb.Append("</radialGradient>") } else { [void]$sb.Append("</linearGradient>") }
-        [void]$sb.Append("</defs>")
-        $fillColor = "url(#qrgrad)"
+    }
+    [void]$sb.Append("</defs>")
+    if ($foregroundColor2) { $fillColor = "url(#qrgrad)" }
+
+    # Fondo
+    [void]$sb.Append("<rect width=""$(ToDot $wUnits)"" height=""$(ToDot $hUnits)"" fill=""$backgroundColor""/>")
+    
+    # Marco Decorativo
+    if ($frameText) {
+        $fColor = if ($frameColor) { $frameColor } else { $foregroundColor }
+        [void]$sb.Append("<rect x=""0"" y=""0"" width=""$(ToDot $wUnits)"" height=""$(ToDot ($baseH + $frameSize * 2))"" fill=""$fColor""/>")
+        [void]$sb.Append("<rect x=""$(ToDot $frameSize)"" y=""$(ToDot $frameSize)"" width=""$(ToDot $baseW)"" height=""$(ToDot $baseH)"" fill=""$backgroundColor""/>")
+        $fFontSize = $frameSize * 0.6
+        $escapedFrameText = [System.Security.SecurityElement]::Escape($frameText)
+        [void]$sb.Append("<text x=""$(ToDot ($wUnits/2))"" y=""$(ToDot ($frameSize/2 + $fFontSize/3))"" font-family=""$fontFamily"" font-size=""$(ToDot $fFontSize)"" font-weight=""bold"" text-anchor=""middle"" fill=""$backgroundColor"">$escapedFrameText</text>")
     }
 
-    [void]$sb.Append("<rect width=""$wUnits"" height=""$hUnits"" fill=""$backgroundColor""/>")
-    
+    $qrOffX = $frameSize
+    $qrOffY = $frameSize
+
     # Calcular área del logo para máscara
     $logoMask = $null
     if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
-        # Para rMQR escalamos según el lado menor
-        $minSide = if ($wUnits -lt ($hUnits - $textHeight)) { $wUnits } else { $hUnits - $textHeight }
+        $minSide = if ($baseW -lt $baseH) { $baseW } else { $baseH }
         $lSize = ($minSide * $logoScale) / 100
-        $lx = ($wUnits - $lSize) / 2
-        $ly = (($hUnits - $textHeight) - $lSize) / 2
+        $lxRel = ($baseW - $lSize) / 2
+        $lyRel = ($baseH - $lSize) / 2
         $margin = 0.5
-        $logoMask = @{ x1 = $lx - $margin; y1 = $ly - $margin; x2 = $lx + $lSize + $margin; y2 = $ly + $lSize + $margin }
+        $logoMask = @{ x1 = $lxRel - $margin; y1 = $lyRel - $margin; x2 = $lxRel + $lSize + $margin; y2 = $lyRel + $lSize + $margin }
     }
 
-    [void]$sb.Append("<g fill=""$fillColor"">")
+    [void]$sb.Append("<g fill=""$fillColor"" transform=""translate($(ToDot $qrOffX), $(ToDot $qrOffY))"">")
     
-    $rectAttr = if ($rounded -gt 0) { " rx=""$rounded"" ry=""$rounded""" } else { "" }
+    $rectAttr = if ($rounded -gt 0) { " rx=""$(ToDot $rounded)"" ry=""$(ToDot $rounded)""" } else { "" }
     
     for ($r = 0; $r -lt $m.Height; $r++) {
         for ($c = 0; $c -lt $m.Width; $c++) {
             $x = $c + $quiet
             $y = $r + $quiet
-            
-            # Saltar si está en la zona del logo
-            if ($logoMask -and $x -ge $logoMask.x1 -and $x -le $logoMask.x2 -and $y -ge $logoMask.y1 -and $y -le $logoMask.y2) {
-                continue
-            }
-
-            if ($m.Mod["$r,$c"] -eq 1) {
-                [void]$sb.Append("<rect x=""$x"" y=""$y"" width=""1"" height=""1""$rectAttr/>")
+            if ($logoMask -and $x -ge $logoMask.x1 -and $x -le $logoMask.x2 -and $y -ge $logoMask.y1 -and $y -le $logoMask.y2) { continue }
+            if ((GetM $m $r $c) -eq 1) {
+                [void]$sb.Append("<rect x=""$(ToDot $x)"" y=""$(ToDot $y)"" width=""1"" height=""1""$rectAttr/>")
             }
         }
     }
@@ -2687,70 +2986,51 @@ function ExportSvgRect {
     # Insertar Texto debajo
     if ($bottomText.Count -gt 0) {
         $fontSize = $lineHeight * 0.7
-        $currentY = $m.Height + ($quiet * 2) # Empezar justo después del QR (incluyendo quiet zone)
+        $currentY = $baseH + ($frameSize * 2)
         foreach ($line in $bottomText) {
             $escapedText = [System.Security.SecurityElement]::Escape($line)
-            # Centrar texto: x = wUnits / 2
-            [void]$sb.Append("<text x=""$($wUnits/2)"" y=""$($currentY + $textPadding + $fontSize)"" font-family=""Arial, sans-serif"" font-size=""$fontSize"" text-anchor=""middle"" fill=""$foregroundColor"">$escapedText</text>")
+            [void]$sb.Append("<text x=""$(ToDot ($wUnits/2))"" y=""$(ToDot ($currentY + $textPadding + $fontSize))"" font-family=""$fontFamily"" font-size=""$(ToDot $fontSize)"" text-anchor=""middle"" fill=""$foregroundColor"">$escapedText</text>")
             $currentY += $lineHeight
         }
     }
 
-    # Insertar Logo si existe
+    # Insertar Logo
     if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
         $logoExt = [System.IO.Path]::GetExtension($logoPath).ToLower()
-        # Para rMQR escalamos según el lado menor del área del QR
-        $qrAreaHeight = $hUnits - $textHeight
-        $minSide = if ($wUnits -lt $qrAreaHeight) { $wUnits } else { $qrAreaHeight }
+        $minSide = if ($baseW -lt $baseH) { $baseW } else { $baseH }
         $lSize = ($minSide * $logoScale) / 100
-        $lx = ($wUnits - $lSize) / 2
-        $ly = ($qrAreaHeight - $lSize) / 2
+        $lx = $qrOffX + ($baseW - $lSize) / 2
+        $ly = $qrOffY + ($baseH - $lSize) / 2
 
         if ($logoExt -eq ".svg") {
             try {
                 [xml]$logoSvg = Get-Content $logoPath
                 $root = $logoSvg.DocumentElement
-                
-                # Intentar obtener viewBox original del logo
                 $vBox = $root.viewBox
-                $lW = if ($root.width) { [double]($root.width -replace '[^\d.]','') } else { 100 }
-                $lH = if ($root.height) { [double]($root.height -replace '[^\d.]','') } else { 100 }
-                
+                $lW = if ($root.width) { FromDot $root.width } else { 100 }
+                $lH = if ($root.height) { FromDot $root.height } else { 100 }
                 if ($vBox) {
                     $parts = $vBox -split '[ ,]+' | Where-Object { $_ -ne "" }
-                    if ($parts.Count -ge 4) {
-                        $lW = [double]$parts[2]
-                        $lH = [double]$parts[3]
-                    }
+                    if ($parts.Count -ge 4) { $lW = FromDot $parts[2]; $lH = FromDot $parts[3] }
                 }
-                
-                # Escalar logo para que quepa en lSize manteniendo aspecto
                 $maxDim = if ($lW -gt $lH) { $lW } else { $lH }
                 $scaleFactorNum = $lSize / $maxDim
-                $scaleFactor = [math]::Round($scaleFactorNum, 6).ToString().Replace(",", ".")
-                
-                # Calcular centrado real basado en dimensiones finales
+                $scaleFactor = ToDot ([math]::Round($scaleFactorNum, 6))
                 $finalW = $lW * $scaleFactorNum
                 $finalH = $lH * $scaleFactorNum
-                $offX = ($wUnits - $finalW) / 2
-                $offY = ($qrAreaHeight - $finalH) / 2
-                
-                # Ajustar el fondo blanco al tamaño real del logo
-                [void]$sb.Append("<rect x=""$offX"" y=""$offY"" width=""$finalW"" height=""$finalH"" fill=""#ffffff""/>")
-
+                $offX = $qrOffX + ($baseW - $finalW) / 2
+                $offY = $qrOffY + ($baseH - $finalH) / 2
+                [void]$sb.Append("<rect x=""$(ToDot $offX)"" y=""$(ToDot $offY)"" width=""$(ToDot $finalW)"" height=""$(ToDot $finalH)"" fill=""$backgroundColor""/>")
                 $inner = $root.InnerXml
-                [void]$sb.Append("<g transform=""translate($offX, $offY) scale($scaleFactor)"">$inner</g>")
-            } catch {
-                Write-Warning "No se pudo procesar el logo SVG: $_"
-            }
+                [void]$sb.Append("<g transform=""translate($(ToDot $offX), $(ToDot $offY)) scale($(ToDot $scaleFactor))"">$inner</g>")
+            } catch { Write-Warning "No se pudo procesar el logo SVG: $_" }
         } elseif ($logoExt -eq ".png") {
             try {
                 $bytes = [System.IO.File]::ReadAllBytes($logoPath)
                 $b64 = [System.Convert]::ToBase64String($bytes)
-                [void]$sb.Append("<image x=""$lx"" y=""$ly"" width=""$lSize"" height=""$lSize"" xlink:href=""data:image/png;base64,$b64"" />")
-            } catch {
-                Write-Warning "No se pudo procesar el logo PNG: $_"
-            }
+                [void]$sb.Append("<rect x=""$(ToDot $lx)"" y=""$(ToDot $ly)"" width=""$(ToDot $lSize)"" height=""$(ToDot $lSize)"" fill=""$backgroundColor""/>")
+                [void]$sb.Append("<image x=""$(ToDot $lx)"" y=""$(ToDot $ly)"" width=""$(ToDot $lSize)"" height=""$(ToDot $lSize)"" xlink:href=""data:image/png;base64,$b64"" />")
+            } catch { Write-Warning "No se pudo procesar el logo PNG: $_" }
         }
     }
 
@@ -2856,7 +3136,11 @@ function New-QRCode {
     [string]$ForegroundColor2 = "",
     [string]$BackgroundColor = "#ffffff",
     [double]$Rounded = 0,
-    [string]$GradientType = "linear"
+    [string]$GradientType = "linear",
+    [string]$FrameText = "",
+    [string]$FrameColor = "#000000",
+    [string]$FontFamily = "Arial, sans-serif",
+    [string]$GoogleFont = ""
     )
     
     # Si hay logo, forzamos EC Level H para asegurar lectura
@@ -3235,9 +3519,9 @@ function New-QRCode {
         $label = "Exportar $ext"
         if ($PSCmdlet.ShouldProcess($OutputPath, $label)) {
             switch ($ext) {
-                ".svg" { ExportSvgRect $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale }
-                ".pdf" { ExportPdf $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale }
-                default { ExportPngRect $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale }
+                ".svg" { ExportSvgRect $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                ".pdf" { ExportPdf $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                default { ExportPngRect $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale $ForegroundColor $BackgroundColor $BottomText $ForegroundColor2 $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
             }
         }
     }
@@ -3418,9 +3702,9 @@ function New-QRCode {
         $label = "Exportar $ext"
         if ($PSCmdlet.ShouldProcess($OutputPath, $label)) {
             switch ($ext) {
-                ".svg" { ExportSvg $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $GradientType }
-                ".pdf" { ExportPdf $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $GradientType }
-                default { ExportPng $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $ForegroundColor $BackgroundColor }
+                ".svg" { ExportSvg $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                ".pdf" { ExportPdf $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                default { ExportPng $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $ForegroundColor $BackgroundColor $BottomText $ForegroundColor2 $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
             }
         }
         Write-Status "Guardado: $OutputPath"
@@ -3586,6 +3870,12 @@ function Start-BatchProcessing {
     $bgColorIni = Get-IniValue $iniContent "QRPS" "QRPS_ColorBack" "#ffffff"
     $roundedIni = [double](Get-IniValue $iniContent "QRPS" "QRPS_Redondeado" "0")
     $gradTypeIni = Get-IniValue $iniContent "QRPS" "QRPS_TipoDegradado" "linear"
+    $frameTextIni = Get-IniValue $iniContent "QRPS" "QRPS_FrameText" ""
+    $frameColorIni = Get-IniValue $iniContent "QRPS" "QRPS_FrameColor" "#000000"
+    $fontFamilyIni = Get-IniValue $iniContent "QRPS" "QRPS_FontFamily" "Arial, sans-serif"
+    $googleFontIni = Get-IniValue $iniContent "QRPS" "QRPS_GoogleFont" ""
+    $pdfUnico = (Get-IniValue $iniContent "QRPS" "QRPS_PdfUnico" "no") -eq "si"
+    $pdfUnicoNombre = Get-IniValue $iniContent "QRPS" "QRPS_PdfUnicoNombre" "qr_combinado.pdf"
     
     # Si hay logo en config, forzamos EC Level H
     if (-not [string]::IsNullOrEmpty($logoPathIni)) {
@@ -3615,9 +3905,19 @@ function Start-BatchProcessing {
     $lines = Get-Content $inputPath -Encoding UTF8
     $count = 1
     
+    $collectedPages = @()
+    
+    $firstLine = $true
     foreach ($line in $lines) {
         $trim = $line.Trim()
         if ([string]::IsNullOrWhiteSpace($trim) -or $trim.StartsWith("#")) { continue }
+        
+        # Omitir encabezado si existe (Data, Line1, etc.)
+        if ($firstLine -and ($trim -match "^Data\s" -or $trim -match "^Data`t")) {
+            $firstLine = $false
+            continue
+        }
+        $firstLine = $false
         
         # Procesar columnas si hay tabs
         $cols = $trim -split "\t"
@@ -3643,24 +3943,110 @@ function Start-BatchProcessing {
         $nameParts = @($prefix, $baseName)
         if (-not [string]::IsNullOrEmpty($suffix)) { $nameParts += $suffix }
         if ($useTs) { $nameParts += "_" + (Get-Date -Format $tsFormat) }
-        $fmt = (Get-IniValue $iniContent "QRPS" "QRPS_FormatoSalida" "svg").ToLower()
-        $ext = switch ($fmt) {
-            "svg" { ".svg" }
-            "pdf" { ".pdf" }
-            default { ".png" }
-        }
-        $name = ($nameParts -join "") + $ext
+        $formats = @((Get-IniValue $iniContent "QRPS" "QRPS_FormatoSalida" "svg").ToLower() -split ',' | ForEach-Object { $_.Trim() })
         
-        $finalPath = Join-Path $outPath $name
-        
-        if ($PSCmdlet.ShouldProcess($finalPath, "Generar QR")) {
-            try {
-                New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $logoPathIni -LogoScale $logoScaleIni -BottomText $bottomText -ForegroundColor $fgColorIni -ForegroundColor2 $fgColor2Ini -BackgroundColor $bgColorIni -Rounded $roundedIni -GradientType $gradTypeIni
-            } catch {
-                Write-Error "Error generando QR para '$dataToEncode': $_"
+        foreach ($fmt in $formats) {
+            if ($fmt -eq "pdf" -and $pdfUnico) {
+                # Generar SVG temporal para recolectar
+                $tempSvg = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid().ToString() + ".svg")
+                try {
+                    New-QRCode -Data $dataToEncode -OutputPath $tempSvg -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $logoPathIni -LogoScale $logoScaleIni -BottomText $bottomText -ForegroundColor $fgColorIni -ForegroundColor2 $fgColor2Ini -BackgroundColor $bgColorIni -Rounded $roundedIni -GradientType $gradTypeIni -FrameText $frameTextIni -FrameColor $frameColorIni -FontFamily $fontFamilyIni -GoogleFont $googleFontIni
+                    
+                    if (Test-Path $tempSvg) {
+                        $svgContent = Get-Content $tempSvg -Raw -Encoding UTF8
+                        [xml]$svgXml = $svgContent
+                        $widthPx = FromDot $svgXml.svg.width
+                        $heightPx = FromDot $svgXml.svg.height
+                        
+                        $collectedPages += [PSCustomObject]@{
+                            Svg = $svgContent
+                            Width = $widthPx
+                            Height = $heightPx
+                        }
+                        Remove-Item $tempSvg -Force
+                    }
+                } catch {
+                    Write-Error "Error recolectando pÃ¡gina PDF para '$dataToEncode': $_"
+                }
+                continue
+            }
+
+            $ext = switch ($fmt) {
+                "svg" { ".svg" }
+                "pdf" { ".pdf" }
+                "png" { ".png" }
+                default { ".png" }
+            }
+            $name = ($nameParts -join "") + $ext
+            $finalPath = Join-Path $outPath $name
+            
+            if ($PSCmdlet.ShouldProcess($finalPath, "Generar QR ($fmt)")) {
+                try {
+                    New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $logoPathIni -LogoScale $logoScaleIni -BottomText $bottomText -ForegroundColor $fgColorIni -ForegroundColor2 $fgColor2Ini -BackgroundColor $bgColorIni -Rounded $roundedIni -GradientType $gradTypeIni -FrameText $frameTextIni -FrameColor $frameColorIni -FontFamily $fontFamilyIni -GoogleFont $googleFontIni
+                } catch {
+                    Write-Error "Error generando QR ($fmt) para '$dataToEncode': $_"
+                }
             }
         }
         $count++
+    }
+    
+    # Generar PDF Ãnico si hay pÃ¡ginas recolectadas
+    if ($collectedPages.Count -gt 0) {
+        Write-Status "`nGenerando PDF Ãnico de $($collectedPages.Count) pÃ¡ginas..."
+        $finalPdfPath = Join-Path $outPath $pdfUnicoNombre
+        $tempHtml = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid().ToString() + ".html")
+        
+        $sb = [System.Text.StringBuilder]::new()
+        [void]$sb.AppendLine("<!DOCTYPE html><html><head><meta charset='UTF-8'><style>")
+        [void]$sb.AppendLine("body { margin: 0; padding: 0; background: white; }")
+        
+        # Estilos para cada página con su tamaño exacto
+        for ($i=0; $i -lt $collectedPages.Count; $i++) {
+            $p = $collectedPages[$i]
+            [void]$sb.AppendLine("@page page$i { size: $(ToDot $p.Width)px $(ToDot $p.Height)px; margin: 0; }")
+            [void]$sb.AppendLine(".p$i { page: page$i; width: $(ToDot $p.Width)px; height: $(ToDot $p.Height)px; page-break-after: always; display: block; line-height: 0; font-size: 0; }")
+            [void]$sb.AppendLine(".p$i svg { display: block; width: 100%; height: 100%; }")
+        }
+        
+        [void]$sb.AppendLine("</style>")
+        
+        # Google Fonts si se requiere
+        if (-not [string]::IsNullOrEmpty($googleFontIni)) {
+            $fontUrl = if ($googleFontIni -match "^http") { $googleFontIni } else { "https://fonts.googleapis.com/css2?family=$($googleFontIni.Replace(' ', '+'))" }
+            [void]$sb.AppendLine("<link href='$fontUrl' rel='stylesheet'>")
+        }
+        
+        [void]$sb.AppendLine("</head><body>")
+        
+        for ($i=0; $i -lt $collectedPages.Count; $i++) {
+            $p = $collectedPages[$i]
+            # Limpiar SVG de declaraciones XML que pueden romper el HTML
+            $cleanSvg = $p.Svg -replace '<\?xml.*?\?>', '' -replace '<!DOCTYPE.*?>', ''
+            [void]$sb.AppendLine("<div class='p$i'>$cleanSvg</div>")
+        }
+        
+        [void]$sb.AppendLine("</body></html>")
+        
+        Set-Content -Path $tempHtml -Value $sb.ToString() -Encoding UTF8
+        
+        $edgePath = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        if (-not (Test-Path $edgePath)) {
+            $edgePath = "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+        }
+        
+        if (Test-Path $edgePath) {
+            $process = Start-Process -FilePath $edgePath -ArgumentList "--headless", "--disable-gpu", "--print-to-pdf=$finalPdfPath", "--no-margins", "file://$($tempHtml)" -PassThru -Wait
+            if ($process.ExitCode -ne 0) {
+                Write-Error "Microsoft Edge fallÃ³ al generar el PDF Ãºnico. CÃ³digo: $($process.ExitCode)"
+            } else {
+                Write-Status "[OK] PDF Ãºnico generado exitosamente en: $finalPdfPath"
+            }
+        } else {
+            Write-Error "No se encontrÃ³ Microsoft Edge para generar el PDF Ãºnico."
+        }
+        
+        if (Test-Path $tempHtml) { Remove-Item $tempHtml -Force }
     }
     
     Write-Status "Proceso completado. QRs guardados en: $outDir"

@@ -49,9 +49,11 @@ El motor implementa la totalidad de los anexos técnicos del estándar:
 ### 🛠️ Características Técnicas
 - **Segmentación Inteligente**: Alterna automáticamente entre modos Numérico, Alfanumérico, Byte (UTF-8) y Kanji (Shift-JIS).
 - **Corrección de Errores (ECC)**: Implementación completa de Reed-Solomon (GF 256) niveles L, M, Q, H.
-- **Exportación PDF Nativa**: Conversión de vectores SVG a PDF utilizando Microsoft Edge (incorporado en Windows). Garantiza salida vectorial limpia, sin encabezados/pies de página y con ajuste automático al tamaño del código.
-- **Texto Inferior Escalable**: Soporte para múltiples líneas de texto debajo del QR, con escalado automático proporcional al tamaño del módulo y centrado dinámico.
-- **Personalización Estética**: Soporte para colores personalizados (Primer plano y fondo) y módulos con esquinas redondeadas para un aspecto más moderno.
+- **Exportación PDF Nativa**: Conversión de vectores SVG a PDF utilizando Microsoft Edge (incorporado en Windows). Garantiza salida vectorial limpia, sin encabezados/pies de página y con ajuste automático al tamaño del código. Soporta la generación de un **PDF único de múltiples páginas** para procesamiento masivo.
+- **Texto Inferior Escalable**: Soporte para múltiples líneas de texto debajo del QR, con escalado automático proporcional al tamaño del módulo y centrado dinámico. Soporta fuentes personalizadas y Google Fonts.
+- **Marcos Decorativos (Frames)**: Capacidad de añadir un marco sólido con texto personalizado (ej: "ESCANEAME") en la parte superior, ideal para llamadas a la acción.
+- **Personalización Estética**: Soporte para colores sólidos, degradados (lineales y radiales), módulos redondeados y máscaras automáticas para logos.
+- **Procesamiento Multi-formato**: Permite generar simultáneamente SVG, PDF y PNG en un solo proceso por lotes.
 - **Formatos Estructurados**: Funciones integradas para generar tarjetas de contacto (vCard) y configuraciones de WiFi.
 - **Decodificación de Referencia**: Capacidad de leer y verificar códigos generados (PNG/SVG).
 - **Reporte de Calidad**: Métricas de densidad, bloques 2x2 y cumplimiento de Quiet Zone.
@@ -93,11 +95,22 @@ El archivo `config.ini` permite automatizar el comportamiento del motor. Soporta
 | Variable | Descripción | Valor por Defecto |
 | :--- | :--- | :--- |
 | `QRPS_ArchivoEntrada` | Lista(s) de entrada (.tsv). Separadas por coma habilitan menú. | `lista_inputs.tsv` |
-| `QRPS_FormatoSalida` | Formato de imagen: `svg`, `pdf` o `png`. | `pdf` |
+| `QRPS_FormatoSalida` | Formato de imagen: `svg`, `pdf`, `png` o combinaciones (ej: `svg,pdf`). | `pdf` |
+| `QRPS_PdfUnico` | Genera un solo archivo PDF con todas las páginas (`si`/`no`). | `no` |
+| `QRPS_PdfUnicoNombre` | Nombre del archivo PDF combinado resultante. | `qr_combinado.pdf` |
 | `QRPS_LogoPath` | Ruta al logo (SVG/PNG) para incrustar en el centro. | (Vacío) |
 | `QRPS_LogoScale` | Porcentaje del tamaño del logo respecto al QR. | `20` |
+| `QRPS_ColorFront` | Color principal del QR (HEX). | `#000000` |
+| `QRPS_ColorFront2` | Segundo color para degradados (HEX, opcional). | (Vacío) |
+| `QRPS_ColorBack` | Color de fondo (HEX). | `#ffffff` |
+| `QRPS_TipoDegradado` | Tipo de degradado: `linear` o `radial`. | `linear` |
+| `QRPS_Redondeado` | Nivel de redondeado de módulos (0 a 0.5). | `0` |
+| `QRPS_FrameText` | Texto para el marco decorativo (ej: ESCANEAME). | (Vacío) |
+| `QRPS_FrameColor` | Color del marco decorativo (HEX). | `#000000` |
+| `QRPS_FontFamily` | Familia de fuentes (ej: Arial, sans-serif). | `Arial, sans-serif` |
+| `QRPS_GoogleFont` | Nombre de Google Font a importar automáticamente. | (Vacío) |
 | `QRPS_MenuTimeout` | Segundos de espera en el menú de selección de listas. | `5` |
-| `QRPS_IndiceColumna` | Columna del TSV para el dato del QR. Las demás columnas se usan como texto inferior. | `1` |
+| `QRPS_IndiceColumna` | Columna del TSV para el dato del QR. Las demás se usan como texto. | `1` |
 | `QRPS_NivelEC` | Nivel de corrección de errores: `L, M, Q, H`. | `M` |
 | `QRPS_TamanoModulo` | Tamaño de cada módulo (pixel/punto). | `10` |
 | `QRPS_ColorFront` | Color de los módulos (HEX). | `#000000` |

@@ -2774,6 +2774,146 @@ function ExportSvg {
     Set-Content -Path $path -Value $sb.ToString() -Encoding UTF8
 }
 
+function ExportPdfNative {
+    param(
+        $m,
+        $path,
+        $scale,
+        $quiet,
+        [string]$foregroundColor = "#000000",
+        [string]$backgroundColor = "#ffffff",
+        [string[]]$bottomText = @()
+    )
+
+    $baseW = if ($null -ne $m.Width) { $m.Width } else { $m.Size }
+    $baseH = if ($null -ne $m.Height) { $m.Height } else { $m.Size }
+    
+    $wUnits = $baseW + ($quiet * 2)
+    $hUnits = $baseH + ($quiet * 2)
+    
+    # Texto inferior (estimación simple: 3 unidades de altura por línea)
+    $textHeight = 0
+    if ($bottomText.Count -gt 0) {
+        $textHeight = ($bottomText.Count * 3) + 1
+    }
+    $hTotalUnits = $hUnits + $textHeight
+
+    $pdfW = $wUnits * $scale
+    $pdfH = $hTotalUnits * $scale
+
+    $fs = [System.IO.FileStream]::new($path, [System.IO.FileMode]::Create)
+    $bw = [System.IO.BinaryWriter]::new($fs)
+    
+    $objOffsets = New-Object System.Collections.Generic.List[long]
+    $WriteStr = { param($s) $bytes = [System.Text.Encoding]::ASCII.GetBytes($s); $bw.Write($bytes) }
+
+    # Header
+    &$WriteStr "%PDF-1.4`n"
+
+    $StartObj = {
+        $objOffsets.Add($fs.Position)
+        &$WriteStr "$($objOffsets.Count) 0 obj`n"
+    }
+
+    # 1. Catalog
+    &$StartObj
+    &$WriteStr "<< /Type /Catalog /Pages 2 0 R >>`nendobj`n"
+
+    # 2. Pages
+    &$StartObj
+    &$WriteStr "<< /Type /Pages /Kids [3 0 R] /Count 1 >>`nendobj`n"
+
+    # 3. Page
+    &$StartObj
+    &$WriteStr "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $(ToDot $pdfW) $(ToDot $pdfH)] /Contents 4 0 R /Resources 5 0 R >>`nendobj`n"
+
+    # 4. Contents
+    $contentSb = New-Object System.Text.StringBuilder
+    
+    $EscapePdfString = {
+        param($s)
+        if ([string]::IsNullOrEmpty($s)) { return "" }
+        return $s.Replace('\', '\\').Replace('(', '\(').Replace(')', '\)')
+    }
+
+    $ToPdfColor = {
+        param($hex)
+        $hex = $hex.Replace("#", "")
+        if ($hex.Length -eq 3) {
+            $r = [Convert]::ToInt32($hex.Substring(0, 1) * 2, 16) / 255.0
+            $g = [Convert]::ToInt32($hex.Substring(1, 1) * 2, 16) / 255.0
+            $b = [Convert]::ToInt32($hex.Substring(2, 1) * 2, 16) / 255.0
+        } else {
+            $r = [Convert]::ToInt32($hex.Substring(0, 2), 16) / 255.0
+            $g = [Convert]::ToInt32($hex.Substring(2, 2), 16) / 255.0
+            $b = [Convert]::ToInt32($hex.Substring(4, 2), 16) / 255.0
+        }
+        return "$(ToDot $r) $(ToDot $g) $(ToDot $b)"
+    }
+
+    $fgColorPdf = &$ToPdfColor $foregroundColor
+    $bgColorPdf = &$ToPdfColor $backgroundColor
+
+    # Fondo
+    [void]$contentSb.AppendLine("$bgColorPdf rg 0 0 $(ToDot $pdfW) $(ToDot $pdfH) re f")
+
+    # QR Modules
+    [void]$contentSb.AppendLine("$fgColorPdf rg")
+    for ($r = 0; $r -lt $baseH; $r++) {
+        for ($c = 0; $c -lt $baseW; $c++) {
+            if ((GetM $m $r $c) -eq 1) {
+                $x = ($c + $quiet) * $scale
+                # Invertir Y (PDF es bottom-up)
+                $y = ($hTotalUnits - ($r + $quiet + 1)) * $scale
+                [void]$contentSb.AppendLine("$(ToDot $x) $(ToDot $y) $(ToDot $scale) $(ToDot $scale) re f")
+            }
+        }
+    }
+
+    # Texto (si hay) - Usando Helvetica básica
+    if ($bottomText.Count -gt 0) {
+        [void]$contentSb.AppendLine("BT /F1 $(ToDot ($scale * 2)) Tf")
+        $currentY = ($textHeight - 2) * $scale
+        foreach ($line in $bottomText) {
+            # Centrado aproximado
+            $textW = $line.Length * ($scale * 1.2)
+            $startX = ($pdfW - $textW) / 2
+            if ($startX -lt 0) { $startX = 0 }
+            $escapedLine = &$EscapePdfString $line
+            [void]$contentSb.AppendLine("$(ToDot $startX) $(ToDot $currentY) Td ($escapedLine) Tj")
+            [void]$contentSb.AppendLine("0 -$(ToDot ($scale * 3)) Td")
+            $currentY -= ($scale * 3)
+        }
+        [void]$contentSb.AppendLine("ET")
+    }
+
+    # Usar Windows-1252 (Encoding 1252) que es compatible con WinAnsiEncoding de PDF
+    # Esto permite tildes y eñes en la mayoría de los visores de PDF con fuentes base
+    $enc = [System.Text.Encoding]::GetEncoding(1252)
+    $contentBytes = $enc.GetBytes($contentSb.ToString())
+    &$StartObj
+    &$WriteStr "<< /Length $($contentBytes.Length) >>`nstream`n"
+    $bw.Write($contentBytes)
+    &$WriteStr "`nendstream`nendobj`n"
+
+    # 5. Resources (Font and ProcSet)
+    &$StartObj
+    &$WriteStr "<< /ProcSet [/PDF /Text] /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >> >> >>`nendobj`n"
+
+    # xref
+    $xrefPos = $fs.Position
+    &$WriteStr "xref`n0 $($objOffsets.Count + 1)`n0000000000 65535 f `n"
+    foreach ($off in $objOffsets) {
+        &$WriteStr ("{0:0000000000} 00000 n `n" -f $off)
+    }
+
+    # trailer
+    &$WriteStr "trailer`n<< /Size $($objOffsets.Count + 1) /Root 1 0 R >>`nstartxref`n$xrefPos`n%%EOF"
+
+    $bw.Close()
+    $fs.Close()
+}
+
 function ExportPdf {
     param(
         $m,
@@ -2793,7 +2933,20 @@ function ExportPdf {
         [string]$fontFamily = "Arial, sans-serif",
         [string]$googleFont = ""
     )
-    # Generar contenido SVG
+    # Intentar exportación nativa si no hay características complejas
+    if ([string]::IsNullOrEmpty($logoPath) -and [string]::IsNullOrEmpty($foregroundColor2) -and $rounded -eq 0 -and [string]::IsNullOrEmpty($frameText)) {
+        try {
+            ExportPdfNative -m $m -path $path -scale $scale -quiet $quiet -foregroundColor $foregroundColor -backgroundColor $backgroundColor -bottomText $bottomText
+            if (Test-Path $path) {
+                Write-Status "[OK] PDF nativo generado exitosamente en: $path"
+                return
+            }
+        } catch {
+            Write-Warning "Fallo en exportación nativa: $_. Cayendo a método Edge."
+        }
+    }
+
+    # Generar contenido SVG (respaldo o para características complejas)
     $tempSvg = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid().ToString() + ".svg")
     $tempHtml = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid().ToString() + ".html")
     

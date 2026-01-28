@@ -3996,6 +3996,79 @@ function New-CryptoAddress {
     return $uri
 }
 
+# ============================================================================
+# ECDSA CRYPTOGRAPHY FUNCTIONS (Digital Signatures)
+# ============================================================================
+
+function New-ECDSAKey {
+    param(
+        [string]$Path = ".\private_key.bin",
+        [string]$PublicKeyPath = ""
+    )
+    $cngAlgo = [System.Security.Cryptography.CngAlgorithm]::ECDsaP256
+    $cngParams = New-Object System.Security.Cryptography.CngKeyCreationParameters
+    $cngParams.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::AllowPlaintextExport
+    $cngParams.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::OverwriteExistingKey
+    $cngKey = [System.Security.Cryptography.CngKey]::Create($cngAlgo, $null, $cngParams)
+    $ecdsa = New-Object System.Security.Cryptography.ECDsaCng($cngKey)
+    
+    # Exportar clave privada (Blob completo)
+    $keyBytes = $ecdsa.Key.Export([System.Security.Cryptography.CngKeyBlobFormat]::EccPrivateBlob)
+    [System.IO.File]::WriteAllBytes($Path, $keyBytes)
+    Write-Status "[ECDSA] Nueva clave PRIVADA P-256 generada en: $Path"
+    
+    # Exportar clave pública si se solicita
+    if (-not [string]::IsNullOrEmpty($PublicKeyPath)) {
+        $pubBytes = $ecdsa.Key.Export([System.Security.Cryptography.CngKeyBlobFormat]::EccPublicBlob)
+        [System.IO.File]::WriteAllBytes($PublicKeyPath, $pubBytes)
+        Write-Status "[ECDSA] Nueva clave PÚBLICA P-256 exportada en: $PublicKeyPath"
+    }
+    
+    return $Path
+}
+
+function Get-ECDSASignature {
+    param(
+        [Parameter(Mandatory)][string]$Data,
+        [Parameter(Mandatory)][string]$PrivateKeyPath
+    )
+    if (-not (Test-Path $PrivateKeyPath)) { throw "Clave privada no encontrada en: $PrivateKeyPath" }
+    
+    $keyBytes = [System.IO.File]::ReadAllBytes($PrivateKeyPath)
+    # Importamos intentando detectar si es un blob privado o público (aunque para firmar necesitamos privado)
+    $cngKey = [System.Security.Cryptography.CngKey]::Import($keyBytes, [System.Security.Cryptography.CngKeyBlobFormat]::EccPrivateBlob)
+    $ecdsa = New-Object System.Security.Cryptography.ECDsaCng($cngKey)
+    
+    $dataBytes = [System.Text.Encoding]::UTF8.GetBytes($Data)
+    $signatureBytes = $ecdsa.SignData($dataBytes)
+    
+    return [Convert]::ToBase64String($signatureBytes)
+}
+
+function Test-ECDSASignature {
+    param(
+        [Parameter(Mandatory)][string]$Data,
+        [Parameter(Mandatory)][string]$SignatureBase64,
+        [Parameter(Mandatory)][string]$PublicKeyPath
+    )
+    if (-not (Test-Path $PublicKeyPath)) { throw "Clave no encontrada en: $PublicKeyPath" }
+    
+    $keyBytes = [System.IO.File]::ReadAllBytes($PublicKeyPath)
+    
+    # Intentamos importar como pública primero, si falla intentamos como privada
+    try {
+        $cngKey = [System.Security.Cryptography.CngKey]::Import($keyBytes, [System.Security.Cryptography.CngKeyBlobFormat]::EccPublicBlob)
+    } catch {
+        $cngKey = [System.Security.Cryptography.CngKey]::Import($keyBytes, [System.Security.Cryptography.CngKeyBlobFormat]::EccPrivateBlob)
+    }
+    
+    $ecdsa = New-Object System.Security.Cryptography.ECDsaCng($cngKey)
+    $dataBytes = [System.Text.Encoding]::UTF8.GetBytes($Data)
+    $signatureBytes = [Convert]::FromBase64String($SignatureBase64)
+    
+    return $ecdsa.VerifyData($dataBytes, $signatureBytes)
+}
+
 function New-QRCode {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -4032,8 +4105,18 @@ function New-QRCode {
     [string]$GoogleFont = "",
     [string]$ModuleShape = "square",
     [switch]$EInk,
-    [switch]$Compress
+    [switch]$Compress,
+    [string]$SignKeyPath = "",
+    [string]$SignSeparator = "|"
     )
+    
+    # Firmar digitalmente los datos si se proporciona una clave ECDSA
+    if (-not [string]::IsNullOrEmpty($SignKeyPath)) {
+        $sig = Get-ECDSASignature -Data $Data -PrivateKeyPath $SignKeyPath
+        $originalLen = $Data.Length
+        $Data = $Data + $SignSeparator + $sig
+        Write-Status "[ECDSA] Datos firmados. Firma (B64): $sig. Longitud total: $($Data.Length) (+$($Data.Length - $originalLen))"
+    }
     
     # Perfil E-Ink: Alto contraste y sin suavizado
     if ($EInk) {
@@ -4748,7 +4831,9 @@ function Start-BatchProcessing {
         [string]$Layout = "Default",
         [int]$MaxThreads = -1,
         [switch]$EInk,
-        [switch]$Compress
+        [switch]$Compress,
+        [string]$SignKeyPath = "",
+        [string]$SignSeparator = "|"
     )
     
     if (-not (Test-Path $IniPath) -and [string]::IsNullOrEmpty($InputFileOverride)) { 
@@ -4833,6 +4918,8 @@ function Start-BatchProcessing {
      $actualMaxThreads = if ($MaxThreads -ge 0) { $MaxThreads } else { [int](Get-IniValue $iniContent "QRPS" "QRPS_MaxThreads" "1") }
      $actualEInk = if ($EInk) { $true } else { (Get-IniValue $iniContent "QRPS" "QRPS_EInk" "no") -eq "si" }
      $actualCompress = if ($Compress) { $true } else { (Get-IniValue $iniContent "QRPS" "QRPS_Compresion" "no") -eq "si" }
+     $actualSignKey = if (-not [string]::IsNullOrEmpty($SignKeyPath)) { $SignKeyPath } else { Get-IniValue $iniContent "QRPS" "QRPS_SignKeyPath" "" }
+     $actualSignSeparator = if ($SignSeparator -ne "|") { $SignSeparator } else { Get-IniValue $iniContent "QRPS" "QRPS_SignSeparator" "|" }
     
     # Si hay logo en config, forzamos EC Level H
     if (-not [string]::IsNullOrEmpty($logoPathIni)) {
@@ -5014,6 +5101,8 @@ function Start-BatchProcessing {
                     ForegroundColor2 = $rowFg2
                     EInk = $actualEInk
                     Compress = $actualCompress
+                    SignKeyPath = $actualSignKey
+                    SignSeparator = $actualSignSeparator
                     BackgroundColor = $rowBg
                     Rounded = $rowRounded
                     ModuleShape = $rowModuleShape
@@ -5049,7 +5138,7 @@ function Start-BatchProcessing {
             try {
                 if ($item.PdfUnico -and $fmt -eq "pdf") {
                     # Solo generar matriz para PDF único
-                    $m = New-QRCode -Data $item.Data -OutputPath $null -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale -EInk:$p.EInk -Compress:$p.Compress -ModuleShape $p.ModuleShape
+                    $m = New-QRCode -Data $item.Data -OutputPath $null -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale -EInk:$p.EInk -Compress:$p.Compress -ModuleShape $p.ModuleShape -SignKeyPath $p.SignKeyPath -SignSeparator $p.SignSeparator
                     return @{ 
                         Index = $item.Index; 
                         Type = "PDFPage"; 
@@ -5076,7 +5165,7 @@ function Start-BatchProcessing {
                         }
                     }
                 } else {
-                    New-QRCode -Data $item.Data -OutputPath $finalPath -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale -BottomText $p.BottomText -ForegroundColor $p.ForegroundColor -ForegroundColor2 $p.ForegroundColor2 -BackgroundColor $p.BackgroundColor -Rounded $p.Rounded -GradientType $p.GradientType -FrameText $p.FrameText -FrameColor $p.FrameColor -FontFamily $p.FontFamily -GoogleFont $p.GoogleFont -EInk:$p.EInk -Compress:$p.Compress -ModuleShape $p.ModuleShape
+                    New-QRCode -Data $item.Data -OutputPath $finalPath -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale -BottomText $p.BottomText -ForegroundColor $p.ForegroundColor -ForegroundColor2 $p.ForegroundColor2 -BackgroundColor $p.BackgroundColor -Rounded $p.Rounded -GradientType $p.GradientType -FrameText $p.FrameText -FrameColor $p.FrameColor -FontFamily $p.FontFamily -GoogleFont $p.GoogleFont -EInk:$p.EInk -Compress:$p.Compress -ModuleShape $p.ModuleShape -SignKeyPath $p.SignKeyPath -SignSeparator $p.SignSeparator
                     return @{ Index = $item.Index; Type = "File"; Path = $finalPath }
                 }
             } catch {
@@ -5129,7 +5218,7 @@ function Start-BatchProcessing {
             if ($PSCmdlet.ShouldProcess($finalPath, "Generar QR ($fmt)")) {
                 try {
                     if ($item.PdfUnico -and $fmt -eq "pdf") {
-                        $m = New-QRCode -Data $item.Data -OutputPath $null -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale -EInk:$p.EInk -Compress:$p.Compress -ModuleShape $p.ModuleShape
+                        $m = New-QRCode -Data $item.Data -OutputPath $null -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale -EInk:$p.EInk -Compress:$p.Compress -ModuleShape $p.ModuleShape -SignKeyPath $p.SignKeyPath
                         [void]$collectedPages.Add([PSCustomObject]@{
                             type = "QR"
                             m = $m
@@ -5152,7 +5241,7 @@ function Start-BatchProcessing {
                             originalIndex = $item.Index
                         })
                     } else {
-                        New-QRCode -Data $item.Data -OutputPath $finalPath -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale -BottomText $p.BottomText -ForegroundColor $p.ForegroundColor -ForegroundColor2 $p.ForegroundColor2 -BackgroundColor $p.BackgroundColor -Rounded $p.Rounded -GradientType $p.GradientType -FrameText $p.FrameText -FrameColor $p.FrameColor -FontFamily $p.FontFamily -GoogleFont $p.GoogleFont -EInk:$p.EInk -Compress:$p.Compress -ModuleShape $p.ModuleShape
+                        New-QRCode -Data $item.Data -OutputPath $finalPath -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale -BottomText $p.BottomText -ForegroundColor $p.ForegroundColor -ForegroundColor2 $p.ForegroundColor2 -BackgroundColor $p.BackgroundColor -Rounded $p.Rounded -GradientType $p.GradientType -FrameText $p.FrameText -FrameColor $p.FrameColor -FontFamily $p.FontFamily -GoogleFont $p.GoogleFont -EInk:$p.EInk -Compress:$p.Compress -ModuleShape $p.ModuleShape -SignKeyPath $p.SignKeyPath
                     }
                 } catch {
                     Write-Error "Error generando QR ($fmt) para '$($item.Data)': $_"

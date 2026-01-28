@@ -46,6 +46,7 @@ param(
     [string]$FrameColor = "",
     [string]$FontFamily = "Arial, sans-serif",
     [string]$GoogleFont = "",
+    [ValidateSet('square','circle','diamond','rounded','star')][string]$ModuleShape = 'square',
     [switch]$PdfUnico,
     [string]$PdfUnicoNombre = "qr_combinado.pdf",
     [string]$Layout = "Default",
@@ -676,7 +677,8 @@ $script:VER_INFO = @{
 
 # Calculated Tables for V1-V40 (Source: ISO 18004 / Nayuki)
 # EC Codewords Per Block (L, M, Q, H) by Version (0 is padding)
-$ECC_PER_BLOCK = @(
+# Error Correction Codewords (L, M, Q, H) by Version
+$script:ECC_PER_BLOCK = @(
     @(-1,-1,-1,-1), # V0
     @(-1, 7, 10, 13, 17), @(-1, 10, 16, 22, 28), @(-1, 15, 26, 18, 22), @(-1, 20, 18, 26, 16),
     @(-1, 26, 24, 18, 22), @(-1, 18, 16, 24, 28), @(-1, 20, 18, 18, 26), @(-1, 24, 22, 20, 24),
@@ -691,7 +693,7 @@ $ECC_PER_BLOCK = @(
 )
 
 # Number of EC Blocks (L, M, Q, H) by Version
-$NUM_EC_BLOCKS = @(
+$script:NUM_EC_BLOCKS = @(
     @(-1,-1,-1,-1),
     @(-1, 1, 1, 1, 1), @(-1, 1, 1, 1, 1), @(-1, 1, 1, 2, 2), @(-1, 1, 2, 2, 4),
     @(-1, 1, 2, 2, 2), @(-1, 2, 4, 4, 4), @(-1, 2, 4, 6, 5), @(-1, 2, 4, 6, 6),
@@ -706,7 +708,7 @@ $NUM_EC_BLOCKS = @(
 )
 
 # Total Data Codewords (L, M, Q, H) - ISO 18004 Standard
-$DATA_CW_TABLE = @(
+$script:DATA_CW_TABLE = @(
     @(-1,-1,-1,-1),
     @(19,16,13,9), @(34,28,22,16), @(55,44,34,26), @(80,64,48,36), @(108,86,62,46),
     @(136,108,76,60), @(156,124,88,66), @(194,154,110,86), @(232,182,132,100), @(274,216,154,122),
@@ -2330,7 +2332,8 @@ function ExportPng {
         [string]$frameText = "",
         [string]$frameColor = "",
         [string]$fontFamily = "Arial, sans-serif",
-        [string]$googleFont = ""
+        [string]$googleFont = "",
+        [string]$moduleShape = "square"
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar PNG")) { return }
     Add-Type -AssemblyName System.Drawing
@@ -2359,6 +2362,8 @@ function ExportPng {
     $bmp = [Drawing.Bitmap]::new([int]$widthPx, [int]$heightPx)
     $g = [Drawing.Graphics]::FromImage($bmp)
     $g.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.PixelOffsetMode = [Drawing.Drawing2D.PixelOffsetMode]::HighQuality
     $g.TextRenderingHint = [Drawing.Text.TextRenderingHint]::AntiAlias
     
     $fgColor = [Drawing.ColorTranslator]::FromHtml($foregroundColor)
@@ -2441,30 +2446,54 @@ function ExportPng {
             if ($logoMask -and ($x + $qrOffX) -ge ($logoMask.x1 + $qrOffX) -and ($x + $qrOffX) -le ($logoMask.x2 + $qrOffX) -and ($y + $qrOffY) -ge ($logoMask.y1 + $qrOffY) -and ($y + $qrOffY) -le ($logoMask.y2 + $qrOffY)) { continue }
             
             if ((GetM $m $r $c) -eq 1) {
-                if ($rounded -gt 0) {
-                    # Normalización de redondeo: Usar rectángulos con bordes redondeados (GraphicsPath)
-                    $radius = [float]($scale * ($rounded / 100))
-                    if ($radius -gt ($scale / 2)) { $radius = $scale / 2 }
-                    
-                    if ($radius -le 0) {
-                        $g.FillRectangle($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
-                    } else {
-                        $gp = [Drawing.Drawing2D.GraphicsPath]::new()
-                        $rect = [Drawing.RectangleF]::new([float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
-                        $diameter = $radius * 2
-                        
-                        $gp.AddArc($rect.X, $rect.Y, $diameter, $diameter, 180, 90)
-                        $gp.AddArc($rect.Right - $diameter, $rect.Y, $diameter, $diameter, 270, 90)
-                        $gp.AddArc($rect.Right - $diameter, $rect.Bottom - $diameter, $diameter, $diameter, 0, 90)
-                        $gp.AddArc($rect.X, $rect.Bottom - $diameter, $diameter, $diameter, 90, 90)
-                        $gp.CloseFigure()
-                        
-                        $g.FillPath($qrBrush, $gp)
-                        $gp.Dispose()
+                $gp = [Drawing.Drawing2D.GraphicsPath]::new()
+                $rect = [Drawing.RectangleF]::new([float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                
+                switch ($moduleShape) {
+                    'circle' {
+                        $gp.AddEllipse($rect)
                     }
-                } else {
-                    $g.FillRectangle($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                    'diamond' {
+                        $points = @(
+                            [Drawing.PointF]::new($rect.X + $rect.Width / 2, $rect.Y),
+                            [Drawing.PointF]::new($rect.Right, $rect.Y + $rect.Height / 2),
+                            [Drawing.PointF]::new($rect.X + $rect.Width / 2, $rect.Bottom),
+                            [Drawing.PointF]::new($rect.X, $rect.Y + $rect.Height / 2)
+                        )
+                        $gp.AddPolygon($points)
+                    }
+                    'star' {
+                        $cx = $rect.X + $rect.Width / 2
+                        $cy = $rect.Y + $rect.Height / 2
+                        $rOuter = $rect.Width / 2
+                        $rInner = $rOuter * 0.4
+                        $points = New-Object Drawing.PointF[] 10
+                        for ($i = 0; $i -lt 10; $i++) {
+                            $angle = [Math]::PI * ($i * 36 - 90) / 180
+                            $rad = if ($i % 2 -eq 0) { $rOuter } else { $radInner }
+                            $points[$i] = [Drawing.PointF]::new($cx + $rad * [Math]::Cos($angle), $cy + $rad * [Math]::Sin($angle))
+                        }
+                        $gp.AddPolygon($points)
+                    }
+                    'rounded' {
+                        $rad = [float]($scale * ($rounded / 100))
+                        if ($rad -gt ($scale / 2)) { $rad = $scale / 2 }
+                        if ($rad -le 0) { $rad = $scale * 0.2 }
+                        
+                        $diam = $rad * 2
+                        $gp.AddArc($rect.X, $rect.Y, $diam, $diam, 180, 90)
+                        $gp.AddArc($rect.Right - $diam, $rect.Y, $diam, $diam, 270, 90)
+                        $gp.AddArc($rect.Right - $diam, $rect.Bottom - $diam, $diam, $diam, 0, 90)
+                        $gp.AddArc($rect.X, $rect.Bottom - $diam, $diam, $diam, 90, 90)
+                        $gp.CloseFigure()
+                    }
+                    default { # square
+                        $gp.AddRectangle($rect)
+                    }
                 }
+                
+                $g.FillPath($qrBrush, $gp)
+                $gp.Dispose()
             }
         }
     }
@@ -2541,7 +2570,8 @@ function ExportPngRect {
         [string]$frameText = "",
         [string]$frameColor = "",
         [string]$fontFamily = "Arial, sans-serif",
-        [string]$googleFont = ""
+        [string]$googleFont = "",
+        [string]$moduleShape = "square"
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar PNG")) { return }
     Add-Type -AssemblyName System.Drawing
@@ -2570,6 +2600,8 @@ function ExportPngRect {
     $bmp = [Drawing.Bitmap]::new([int]$widthPx, [int]$heightPx)
     $g = [Drawing.Graphics]::FromImage($bmp)
     $g.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.PixelOffsetMode = [Drawing.Drawing2D.PixelOffsetMode]::HighQuality
     $g.TextRenderingHint = [Drawing.Text.TextRenderingHint]::AntiAlias
     
     $fgColor = [Drawing.ColorTranslator]::FromHtml($foregroundColor)
@@ -2654,30 +2686,54 @@ function ExportPngRect {
             if ($logoMask -and ($x + $qrOffX) -ge ($logoMask.x1 + $qrOffX) -and ($x + $qrOffX) -le ($logoMask.x2 + $qrOffX) -and ($y + $qrOffY) -ge ($logoMask.y1 + $qrOffY) -and ($y + $qrOffY) -le ($logoMask.y2 + $qrOffY)) { continue }
             
             if ((GetM $m $r $c) -eq 1) {
-                if ($rounded -gt 0) {
-                    # Normalización de redondeo: Usar rectángulos con bordes redondeados (GraphicsPath)
-                    $radius = [float]($scale * ($rounded / 100))
-                    if ($radius -gt ($scale / 2)) { $radius = $scale / 2 }
-                    
-                    if ($radius -le 0) {
-                        $g.FillRectangle($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
-                    } else {
-                        $gp = [Drawing.Drawing2D.GraphicsPath]::new()
-                        $rect = [Drawing.RectangleF]::new([float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
-                        $diameter = $radius * 2
-                        
-                        $gp.AddArc($rect.X, $rect.Y, $diameter, $diameter, 180, 90)
-                        $gp.AddArc($rect.Right - $diameter, $rect.Y, $diameter, $diameter, 270, 90)
-                        $gp.AddArc($rect.Right - $diameter, $rect.Bottom - $diameter, $diameter, $diameter, 0, 90)
-                        $gp.AddArc($rect.X, $rect.Bottom - $diameter, $diameter, $diameter, 90, 90)
-                        $gp.CloseFigure()
-                        
-                        $g.FillPath($qrBrush, $gp)
-                        $gp.Dispose()
+                $gp = [Drawing.Drawing2D.GraphicsPath]::new()
+                $rect = [Drawing.RectangleF]::new([float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                
+                switch ($moduleShape) {
+                    'circle' {
+                        $gp.AddEllipse($rect)
                     }
-                } else {
-                    $g.FillRectangle($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                    'diamond' {
+                        $points = @(
+                            [Drawing.PointF]::new($rect.X + $rect.Width / 2, $rect.Y),
+                            [Drawing.PointF]::new($rect.Right, $rect.Y + $rect.Height / 2),
+                            [Drawing.PointF]::new($rect.X + $rect.Width / 2, $rect.Bottom),
+                            [Drawing.PointF]::new($rect.X, $rect.Y + $rect.Height / 2)
+                        )
+                        $gp.AddPolygon($points)
+                    }
+                    'star' {
+                        $cx = $rect.X + $rect.Width / 2
+                        $cy = $rect.Y + $rect.Height / 2
+                        $rOuter = $rect.Width / 2
+                        $rInner = $rOuter * 0.4
+                        $points = New-Object Drawing.PointF[] 10
+                        for ($i = 0; $i -lt 10; $i++) {
+                            $angle = [Math]::PI * ($i * 36 - 90) / 180
+                            $rad = if ($i % 2 -eq 0) { $rOuter } else { $rInner }
+                            $points[$i] = [Drawing.PointF]::new($cx + $rad * [Math]::Cos($angle), $cy + $rad * [Math]::Sin($angle))
+                        }
+                        $gp.AddPolygon($points)
+                    }
+                    'rounded' {
+                        $rad = [float]($scale * ($rounded / 100))
+                        if ($rad -gt ($scale / 2)) { $rad = $scale / 2 }
+                        if ($rad -le 0) { $rad = $scale * 0.2 }
+                        
+                        $diam = $rad * 2
+                        $gp.AddArc($rect.X, $rect.Y, $diam, $diam, 180, 90)
+                        $gp.AddArc($rect.Right - $diam, $rect.Y, $diam, $diam, 270, 90)
+                        $gp.AddArc($rect.Right - $diam, $rect.Bottom - $diam, $diam, $diam, 0, 90)
+                        $gp.AddArc($rect.X, $rect.Bottom - $diam, $diam, $diam, 90, 90)
+                        $gp.CloseFigure()
+                    }
+                    default { # square
+                        $gp.AddRectangle($rect)
+                    }
                 }
+                
+                $g.FillPath($qrBrush, $gp)
+                $gp.Dispose()
             }
         }
     }
@@ -2753,7 +2809,8 @@ function ExportSvg {
         [string]$frameText = "",
         [string]$frameColor = "",
         [string]$fontFamily = "Arial, sans-serif",
-        [string]$googleFont = ""
+        [string]$googleFont = "",
+        [string]$moduleShape = "square"
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar SVG")) { return }
     $size = $m.Size
@@ -2778,7 +2835,7 @@ function ExportSvg {
     $heightPx = $hUnits * $scale
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append("<?xml version=""1.0"" encoding=""UTF-8""?>")
-    [void]$sb.Append("<svg xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" width=""$(ToDot $widthPx)"" height=""$(ToDot $heightPx)"" viewBox=""0 0 $(ToDot $wUnits) $(ToDot $hUnits)"" shape-rendering=""crispEdges"" role=""img"" aria-labelledby=""svgTitle svgDesc"">")
+    [void]$sb.Append("<svg xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" width=""$(ToDot $widthPx)"" height=""$(ToDot $heightPx)"" viewBox=""0 0 $(ToDot $wUnits) $(ToDot $hUnits)"" shape-rendering=""geometricPrecision"" role=""img"" aria-labelledby=""svgTitle svgDesc"">")
     [void]$sb.Append("<title id=""svgTitle"">Código QR</title>")
     [void]$sb.Append("<desc id=""svgDesc"">Código QR generado por qrps que contiene datos codificados.</desc>")
     
@@ -2834,15 +2891,40 @@ function ExportSvg {
 
     [void]$sb.Append("<g fill=""$fillColor"" transform=""translate($(ToDot $qrOffX), $(ToDot $qrOffY))"">")
     
-    $rectAttr = if ($rounded -gt 0) { " rx=""$(ToDot $rounded)"" ry=""$(ToDot $rounded)""" } else { "" }
-    
     for ($r = 0; $r -lt $m.Size; $r++) {
         for ($c = 0; $c -lt $m.Size; $c++) {
             $x = $c + $quiet
             $y = $r + $quiet
             if ($logoMask -and $x -ge $logoMask.x1 -and $x -le $logoMask.x2 -and $y -ge $logoMask.y1 -and $y -le $logoMask.y2) { continue }
             if ((GetM $m $r $c) -eq 1) {
-                [void]$sb.Append("<rect x=""$(ToDot $x)"" y=""$(ToDot $y)"" width=""1"" height=""1""$rectAttr/>")
+                switch ($moduleShape) {
+                    'circle' {
+                        [void]$sb.Append("<circle cx=""$(ToDot ($x + 0.5))"" cy=""$(ToDot ($y + 0.5))"" r=""0.5""/>")
+                    }
+                    'diamond' {
+                        [void]$sb.Append("<path d=""M $(ToDot ($x + 0.5)) $(ToDot $y) L $(ToDot ($x + 1)) $(ToDot ($y + 0.5)) L $(ToDot ($x + 0.5)) $(ToDot ($y + 1)) L $(ToDot $x) $(ToDot ($y + 0.5)) Z""/>")
+                    }
+                    'star' {
+                        $points = ""
+                        for ($i = 0; $i -lt 10; $i++) {
+                            $angle = [Math]::PI * ($i * 36 - 90) / 180
+                            $rad = if ($i % 2 -eq 0) { 0.5 } else { 0.2 }
+                            $px = $x + 0.5 + $rad * [Math]::Cos($angle)
+                            $py = $y + 0.5 + $rad * [Math]::Sin($angle)
+                            $points += "$(ToDot $px),$(ToDot $py) "
+                        }
+                        [void]$sb.Append("<polygon points=""$($points.Trim())""/>")
+                    }
+                    'rounded' {
+                        $rad = $rounded / 100
+                        if ($rad -gt 0.5) { $rad = 0.5 }
+                        if ($rad -le 0) { $rad = 0.2 }
+                        [void]$sb.Append("<rect x=""$(ToDot $x)"" y=""$(ToDot $y)"" width=""1"" height=""1"" rx=""$(ToDot $rad)"" ry=""$(ToDot $rad)""/>")
+                    }
+                    default { # square
+                        [void]$sb.Append("<rect x=""$(ToDot $x)"" y=""$(ToDot $y)"" width=""1"" height=""1""/>")
+                    }
+                }
             }
         }
     }
@@ -3182,6 +3264,13 @@ end
             $offsetX = $c * $cellW
             $offsetY = $pH - (($r + 1) * $cellH)
 
+            # Dibujar fondo de la celda si es necesario
+            if ($item.bg -and $item.bg -ne "transparent" -and $item.bg -ne "#ffffff") {
+                $bgPdf = &$ToPdfColor $item.bg
+                [void]$contentSb.AppendLine("$bgPdf rg")
+                [void]$contentSb.AppendLine("$(ToDot $offsetX) $(ToDot $offsetY) $(ToDot $cellW) $(ToDot $cellH) re f")
+            }
+
             # Create Structure Element (Accessibility)
             &$StartObj
             $structElemId = $objOffsets.Count
@@ -3209,22 +3298,131 @@ end
                     $dispX = $offsetX + ($cellW - $dispW) / 2
                     $dispY = $offsetY + ($cellH - $dispH) / 2
                     
-                    [void]$contentSb.AppendLine("/Figure <</MCID 0>> BDC")
+                    [void]$contentSb.AppendLine("/Figure << /MCID 0 >> BDC")
                     [void]$contentSb.AppendLine("q $(ToDot $dispW) 0 0 $(ToDot $dispH) $(ToDot $dispX) $(ToDot $dispY) cm /$imgName Do Q")
                     [void]$contentSb.AppendLine("EMC")
                 }
             } else {
                 # QR Drawing Logic
-                # ... (QR setup)
                 $m = $item.m
-                # ...
+                $scale = $item.scale
+                $quiet = $item.quiet
+                $frameSize = if ($item.frame) { 4 } else { 0 }
                 
-                [void]$contentSb.AppendLine("/Figure <</MCID 0>> BDC")
+                # Calcular dimensiones base
+                $baseW = if ($null -ne $m.Width) { $m.Width } else { $m.Size }
+                $baseH = if ($null -ne $m.Height) { $m.Height } else { $m.Size }
+                
+                # Calcular líneas de texto para el offset Y
+                $allLines = @()
+                if ($item.text.Count -gt 0) {
+                    foreach ($txt in $item.text) { if ($txt) { foreach ($sl in ($txt -split "\n")) { if ($sl) { $allLines += $sl } } } }
+                }
+                $textHeight = if ($allLines.Count -gt 0) { ($allLines.Count * 3) + 1 } else { 0 }
+
+                # innerX/Y son las coordenadas del QR relativo a la celda (bottom-left)
+                $innerX = $offsetX + ($quiet + $frameSize) * $scale
+                $innerY = $offsetY + ($textHeight + $quiet + $frameSize) * $scale
+
+                # Dibujar fondo blanco del QR (quiet zone + QR) si el fondo de la celda no es blanco
+                if ($item.bg -and $item.bg -ne "#ffffff") {
+                    [void]$contentSb.AppendLine("1 1 1 rg")
+                    $qrAreaW = ($baseW + ($quiet + $frameSize) * 2) * $scale
+                    $qrAreaH = ($baseH + ($quiet + $frameSize) * 2) * $scale
+                    [void]$contentSb.AppendLine("$(ToDot ($offsetX + ($cellW - $qrAreaW)/2)) $(ToDot ($offsetY + $textHeight * $scale + ($cellH - $textHeight * $scale - $qrAreaH)/2)) $(ToDot $qrAreaW) $(ToDot $qrAreaH) re f")
+                }
+
+                [void]$contentSb.AppendLine("/Figure << /MCID 0 >> BDC")
                 [void]$contentSb.AppendLine("q 1 0 0 1 $(ToDot $innerX) $(ToDot $innerY) cm")
-                # ... (QR drawing)
-                # At the end of QR drawing:
+                
+                # Color frontal
+                $fgPdf = &$ToPdfColor $item.fg
+                [void]$contentSb.AppendLine("$fgPdf rg")
+                
+                # Bucle de dibujo de módulos
+                for ($r = 0; $r -lt $baseH; $r++) {
+                    for ($c = 0; $c -lt $baseW; $c++) {
+                        if ((GetM $m $r $c) -eq 1) {
+                            $x = $c * $scale
+                            $y = ($baseH - 1 - $r) * $scale
+                            
+                            switch ($item.moduleShape) {
+                                'circle' {
+                                    $cx = $x + $scale/2
+                                    $cy = $y + $scale/2
+                                    $rad = $scale/2
+                                    $kappa = 0.552284749831 * $rad
+                                    [void]$contentSb.AppendLine("$(ToDot ($cx+$rad)) $(ToDot $cy) m")
+                                    [void]$contentSb.AppendLine("$(ToDot ($cx+$rad)) $(ToDot ($cy+$kappa)) $(ToDot ($cx+$kappa)) $(ToDot ($cy+$rad)) $(ToDot $cx) $(ToDot ($cy+$rad)) c")
+                                    [void]$contentSb.AppendLine("$(ToDot ($cx-$kappa)) $(ToDot ($cy+$rad)) $(ToDot ($cx-$rad)) $(ToDot ($cy+$kappa)) $(ToDot ($cx-$rad)) $(ToDot $cy) c")
+                                    [void]$contentSb.AppendLine("$(ToDot ($cx-$rad)) $(ToDot ($cy-$kappa)) $(ToDot ($cx-$kappa)) $(ToDot ($cy-$rad)) $(ToDot $cx) $(ToDot ($cy-$rad)) c")
+                                    [void]$contentSb.AppendLine("$(ToDot ($cx+$kappa)) $(ToDot ($cy-$rad)) $(ToDot ($cx+$rad)) $(ToDot ($cy-$kappa)) $(ToDot ($cx+$rad)) $(ToDot $cy) c")
+                                    [void]$contentSb.AppendLine("f")
+                                }
+                                'diamond' {
+                                    [void]$contentSb.AppendLine("$(ToDot ($x + $scale/2)) $(ToDot $y) m")
+                                    [void]$contentSb.AppendLine("$(ToDot ($x + $scale)) $(ToDot ($y + $scale/2)) l")
+                                    [void]$contentSb.AppendLine("$(ToDot ($x + $scale/2)) $(ToDot ($y + $scale)) l")
+                                    [void]$contentSb.AppendLine("$(ToDot $x) $(ToDot ($y + $scale/2)) l h f")
+                                }
+                                'star' {
+                                    $s = $scale
+                                    [void]$contentSb.AppendLine("$(ToDot ($x + $s/2)) $(ToDot $y) m")
+                                    [void]$contentSb.AppendLine("$(ToDot ($x + $s*0.6)) $(ToDot ($y + $s*0.4)) l")
+                                    [void]$contentSb.AppendLine("$(ToDot ($x + $s)) $(ToDot ($y + $s/2)) l")
+                                    [void]$contentSb.AppendLine("$(ToDot ($x + $s*0.6)) $(ToDot ($y + $s*0.6)) l")
+                                    [void]$contentSb.AppendLine("$(ToDot ($x + $s/2)) $(ToDot ($y + $s)) l")
+                                    [void]$contentSb.AppendLine("$(ToDot ($x + $s*0.4)) $(ToDot ($y + $s*0.6)) l")
+                                    [void]$contentSb.AppendLine("$(ToDot $x) $(ToDot ($y + $s/2)) l")
+                                    [void]$contentSb.AppendLine("$(ToDot ($x + $s*0.4)) $(ToDot ($y + $s*0.4)) l h f")
+                                }
+                                'rounded' {
+                                    $rad = [Math]::Min($item.rounded * $scale, $scale/2)
+                                    if ($rad -le 0) {
+                                        [void]$contentSb.AppendLine("$(ToDot $x) $(ToDot $y) $(ToDot $scale) $(ToDot $scale) re f")
+                                    } else {
+                                        $s = $scale
+                                        $k = 0.552284749831 * $rad
+                                        [void]$contentSb.AppendLine("$(ToDot ($x + $rad)) $(ToDot $y) m")
+                                        [void]$contentSb.AppendLine("$(ToDot ($x + $s - $rad)) $(ToDot $y) l")
+                                        [void]$contentSb.AppendLine("$(ToDot ($x + $s - $rad + $k)) $(ToDot $y) $(ToDot ($x + $s)) $(ToDot ($y + $rad - $k)) $(ToDot ($x + $s)) $(ToDot ($y + $rad)) c")
+                                        [void]$contentSb.AppendLine("$(ToDot ($x + $s)) $(ToDot ($y + $s - $rad)) l")
+                                        [void]$contentSb.AppendLine("$(ToDot ($x + $s)) $(ToDot ($y + $s - $rad + $k)) $(ToDot ($x + $s - $rad + $k)) $(ToDot ($y + $s)) $(ToDot ($x + $s - $rad)) c")
+                                        [void]$contentSb.AppendLine("$(ToDot ($x + $rad)) $(ToDot ($y + $s)) l")
+                                        [void]$contentSb.AppendLine("$(ToDot ($x + $rad - $k)) $(ToDot ($y + $s)) $(ToDot $x) $(ToDot ($y + $s - $rad + $k)) $(ToDot $x) $(ToDot ($y + $s - $rad)) c")
+                                        [void]$contentSb.AppendLine("$(ToDot $x) $(ToDot ($y + $rad)) l")
+                                        [void]$contentSb.AppendLine("$(ToDot $x) $(ToDot ($y + $rad - $k)) $(ToDot ($x + $rad - $k)) $(ToDot $y) $(ToDot ($x + $rad)) c")
+                                        [void]$contentSb.AppendLine("h f")
+                                    }
+                                }
+                                default {
+                                    [void]$contentSb.AppendLine("$(ToDot $x) $(ToDot $y) $(ToDot $scale) $(ToDot $scale) re f")
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 [void]$contentSb.AppendLine("Q")
                 [void]$contentSb.AppendLine("EMC")
+
+                # Dibujar texto inferior si existe
+                if ($allLines.Count -gt 0) {
+                    [void]$contentSb.AppendLine("BT")
+                    [void]$contentSb.AppendLine("/F1 $(ToDot ($scale * 0.8)) Tf")
+                    $textFg = &$ToPdfColor $item.fg
+                    [void]$contentSb.AppendLine("$textFg rg")
+                    $lineY = $offsetY + ($textHeight - 2) * $scale
+                    foreach ($line in $allLines) {
+                        # Centrar texto (aproximación simple ya que no tenemos métricas de fuente)
+                        $approxWidth = $line.Length * ($scale * 0.4)
+                        $textX = $offsetX + ($cellW - $approxWidth) / 2
+                        [void]$contentSb.AppendLine("1 0 0 1 $(ToDot $textX) $(ToDot $lineY) Tm")
+                        [void]$contentSb.AppendLine("($line) Tj")
+                        $lineY -= $scale * 1.2
+                    }
+                    [void]$contentSb.AppendLine("ET")
+                }
             }
         }
 
@@ -3307,7 +3505,8 @@ function ExportPdf {
         [string]$frameText = "",
         [string]$frameColor = "",
         [string]$fontFamily = "Arial, sans-serif",
-        [string]$googleFont = ""
+        [string]$googleFont = "",
+        [string]$moduleShape = "square"
     )
 
     # Usar el motor nativo multi-página para generar un PDF de una sola página
@@ -3329,6 +3528,7 @@ function ExportPdf {
             frameColor = $frameColor
             logoPath = $logoPath
             logoScale = $logoScale
+            moduleShape = $moduleShape
         })
         ExportPdfMultiNative -pages $pages -path $path -layout "Default"
         if (Test-Path $path) {
@@ -3358,7 +3558,8 @@ function ExportSvgRect {
         [string]$frameText = "",
         [string]$frameColor = "",
         [string]$fontFamily = "Arial, sans-serif",
-        [string]$googleFont = ""
+        [string]$googleFont = "",
+        [string]$moduleShape = "square"
     )
     if (-not $PSCmdlet.ShouldProcess($path, "Exportar SVG")) { return }
     $baseW = $m.Width + ($quiet * 2)
@@ -3383,7 +3584,7 @@ function ExportSvgRect {
     $heightPx = $hUnits * $scale
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append("<?xml version=""1.0"" encoding=""UTF-8""?>")
-    [void]$sb.Append("<svg xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" width=""$(ToDot $widthPx)"" height=""$(ToDot $heightPx)"" viewBox=""0 0 $(ToDot $wUnits) $(ToDot $hUnits)"" shape-rendering=""crispEdges"" role=""img"" aria-labelledby=""svgTitleRect svgDescRect"">")
+    [void]$sb.Append("<svg xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" width=""$(ToDot $widthPx)"" height=""$(ToDot $heightPx)"" viewBox=""0 0 $(ToDot $wUnits) $(ToDot $hUnits)"" shape-rendering=""geometricPrecision"" role=""img"" aria-labelledby=""svgTitleRect svgDescRect"">")
     [void]$sb.Append("<title id=""svgTitleRect"">Código QR Rectangular</title>")
     [void]$sb.Append("<desc id=""svgDescRect"">Código QR rectangular generado por qrps que contiene datos codificados.</desc>")
     
@@ -3438,15 +3639,34 @@ function ExportSvgRect {
 
     [void]$sb.Append("<g fill=""$fillColor"" transform=""translate($(ToDot $qrOffX), $(ToDot $qrOffY))"">")
     
-    $rectAttr = if ($rounded -gt 0) { " rx=""$(ToDot $rounded)"" ry=""$(ToDot $rounded)""" } else { "" }
-    
     for ($r = 0; $r -lt $m.Height; $r++) {
         for ($c = 0; $c -lt $m.Width; $c++) {
             $x = $c + $quiet
             $y = $r + $quiet
             if ($logoMask -and $x -ge $logoMask.x1 -and $x -le $logoMask.x2 -and $y -ge $logoMask.y1 -and $y -le $logoMask.y2) { continue }
             if ((GetM $m $r $c) -eq 1) {
-                [void]$sb.Append("<rect x=""$(ToDot $x)"" y=""$(ToDot $y)"" width=""1"" height=""1""$rectAttr/>")
+                switch ($moduleShape) {
+                    'circle' { [void]$sb.Append("<circle cx=""$(ToDot ($x + 0.5))"" cy=""$(ToDot ($y + 0.5))"" r=""0.5""/>") }
+                    'diamond' { [void]$sb.Append("<path d=""M $(ToDot ($x + 0.5)) $(ToDot $y) L $(ToDot ($x + 1)) $(ToDot ($y + 0.5)) L $(ToDot ($x + 0.5)) $(ToDot ($y + 1)) L $(ToDot $x) $(ToDot ($y + 0.5)) Z""/>") }
+                    'star' {
+                        $points = ""
+                        for ($i = 0; $i -lt 10; $i++) {
+                            $angle = [Math]::PI * ($i * 36 - 90) / 180
+                            $rad = if ($i % 2 -eq 0) { 0.5 } else { 0.2 }
+                            $px = $x + 0.5 + $rad * [Math]::Cos($angle)
+                            $py = $y + 0.5 + $rad * [Math]::Sin($angle)
+                            $points += "$(ToDot $px),$(ToDot $py) "
+                        }
+                        [void]$sb.Append("<polygon points=""$($points.Trim())""/>")
+                    }
+                    'rounded' {
+                        $rad = $rounded / 100
+                        if ($rad -gt 0.5) { $rad = 0.5 }
+                        if ($rad -le 0) { $rad = 0.2 }
+                        [void]$sb.Append("<rect x=""$(ToDot $x)"" y=""$(ToDot $y)"" width=""1"" height=""1"" rx=""$(ToDot $rad)"" ry=""$(ToDot $rad)""/>")
+                    }
+                    default { [void]$sb.Append("<rect x=""$(ToDot $x)"" y=""$(ToDot $y)"" width=""1"" height=""1""/>") }
+                }
             }
         }
     }
@@ -3674,7 +3894,8 @@ function New-QRCode {
     [string]$FrameText = "",
     [string]$FrameColor = "#000000",
     [string]$FontFamily = "Arial, sans-serif",
-    [string]$GoogleFont = ""
+    [string]$GoogleFont = "",
+    [string]$ModuleShape = "square"
     )
     
     # Si hay logo, forzamos EC Level H para asegurar lectura
@@ -4053,9 +4274,9 @@ function New-QRCode {
         $label = "Exportar $ext"
         if ($PSCmdlet.ShouldProcess($OutputPath, $label)) {
             switch ($ext) {
-                ".svg" { ExportSvgRect $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
-                ".pdf" { ExportPdf $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
-                default { ExportPngRect $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale $ForegroundColor $BackgroundColor $BottomText $ForegroundColor2 $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                ".svg" { ExportSvgRect $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $ModuleShape $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                ".pdf" { ExportPdf $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $ModuleShape $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                default { ExportPngRect $m $OutputPath $ModuleSize 4 $LogoPath $LogoScale $ForegroundColor $BackgroundColor $BottomText $ForegroundColor2 $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont $ModuleShape }
             }
         }
     }
@@ -4236,9 +4457,9 @@ function New-QRCode {
         $label = "Exportar $ext"
         if ($PSCmdlet.ShouldProcess($OutputPath, $label)) {
             switch ($ext) {
-                ".svg" { ExportSvg $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
-                ".pdf" { ExportPdf $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
-                default { ExportPng $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $ForegroundColor $BackgroundColor $BottomText $ForegroundColor2 $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                ".svg" { ExportSvg $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $ModuleShape $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                ".pdf" { ExportPdf $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $ModuleShape $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                default { ExportPng $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $ForegroundColor $BackgroundColor $BottomText $ForegroundColor2 $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont $ModuleShape }
             }
         }
         Write-Status "Guardado: $OutputPath"
@@ -4968,7 +5189,7 @@ if ($MyInvocation.InvocationName -ne '.' -and $MyInvocation.InvocationName -ne '
         return
     }
 
-if ($Decode -and -not [string]::IsNullOrEmpty($InputPath)) {
+    if ($Decode -and -not [string]::IsNullOrEmpty($InputPath)) {
     Write-Status "Importando archivo para decodificación: $InputPath"
     $m = Import-QRCode $InputPath
     
@@ -5004,19 +5225,20 @@ if ($Decode -and -not [string]::IsNullOrEmpty($InputPath)) {
     } catch {
         Write-Error "Error al decodificar: $_"
     }
-} elseif (-not [string]::IsNullOrEmpty($Data)) {
-    # Modo CLI Directo (Un solo QR)
-    New-QRCode -Data $Data -OutputPath $OutputPath -ECLevel $ECLevel -Version $Version -ModuleSize $ModuleSize -EciValue $EciValue -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -ShowConsole:$ShowConsole -Decode:$Decode -QualityReport:$QualityReport -LogoPath $LogoPath -LogoScale $LogoScale -BottomText $BottomText -ForegroundColor $ForegroundColor -ForegroundColor2 $ForegroundColor2 -BackgroundColor $BackgroundColor -Rounded $Rounded -GradientType $GradientType -FrameText $FrameText -FrameColor $FrameColor -FontFamily $FontFamily -GoogleFont $GoogleFont
-} elseif (-not [string]::IsNullOrEmpty($ImageDir)) {
-    # Modo Conversor de Imágenes a PDF (CLI)
-    $finalPath = if ($OutputPath) { $OutputPath } else { "imagenes_convertidas.pdf" }
-    Convert-ImagesToPdf -inputDir $ImageDir -outputPath $finalPath -layout $Layout
-} else {
-    # Modo Batch (Por Archivo o Config) o Menú Interactivo
-    if (-not [string]::IsNullOrEmpty($InputFile) -or (Test-Path $IniPath)) {
-        Start-BatchProcessing -IniPath $IniPath -InputFileOverride $InputFile -OutputDirOverride $OutputDir -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $LogoPath -LogoScale $LogoScale -ForegroundColor $ForegroundColor -ForegroundColor2 $ForegroundColor2 -BackgroundColor $BackgroundColor -Rounded $Rounded -GradientType $GradientType -FrameText $FrameText -FrameColor $FrameColor -FontFamily $FontFamily -GoogleFont $GoogleFont -PdfUnico:$PdfUnico -PdfUnicoNombre $PdfUnicoNombre -Layout $Layout
+    } elseif (-not [string]::IsNullOrEmpty($Data)) {
+        # Modo CLI Directo (Un solo QR)
+        New-QRCode -Data $Data -OutputPath $OutputPath -ECLevel $ECLevel -Version $Version -ModuleSize $ModuleSize -EciValue $EciValue -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -ShowConsole:$ShowConsole -Decode:$Decode -QualityReport:$QualityReport -LogoPath $LogoPath -LogoScale $LogoScale -BottomText $BottomText -ForegroundColor $ForegroundColor -ForegroundColor2 $ForegroundColor2 -BackgroundColor $BackgroundColor -Rounded $Rounded -ModuleShape $ModuleShape -GradientType $GradientType -FrameText $FrameText -FrameColor $FrameColor -FontFamily $FontFamily -GoogleFont $GoogleFont
+    } elseif (-not [string]::IsNullOrEmpty($ImageDir)) {
+        # Modo Conversor de Imágenes a PDF (CLI)
+        $finalPath = if ($OutputPath) { $OutputPath } else { "imagenes_convertidas.pdf" }
+        Convert-ImagesToPdf -inputDir $ImageDir -outputPath $finalPath -layout $Layout
     } else {
-        Show-Menu
+        # Modo Batch (Por Archivo o Config) o Menú Interactivo
+        if (-not [string]::IsNullOrEmpty($InputFile) -or (Test-Path $IniPath)) {
+            Start-BatchProcessing -IniPath $IniPath -InputFileOverride $InputFile -OutputDirOverride $OutputDir -Symbol $Symbol -Model $Model -MicroVersion $MicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $LogoPath -LogoScale $LogoScale -ForegroundColor $ForegroundColor -ForegroundColor2 $ForegroundColor2 -BackgroundColor $BackgroundColor -Rounded $Rounded -ModuleShape $ModuleShape -GradientType $GradientType -FrameText $FrameText -FrameColor $FrameColor -FontFamily $FontFamily -GoogleFont $GoogleFont -PdfUnico:$PdfUnico -PdfUnicoNombre $PdfUnicoNombre -Layout $Layout
+        } else {
+            Show-Menu
+        }
     }
 }
 

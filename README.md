@@ -203,7 +203,7 @@ Para evolucionar `qrps` hacia un motor de grado industrial, se ha dividido el ro
   - **Compresión de Datos**: ✅ Implementado algoritmos de compresión por diccionario para QR V40.
   - **Nuevos Formatos**: ✅ Soporte para Geo-localización, vEvent y Cripto-direcciones.
 - **🎨 Estética**:
-  - **Redondeado Avanzado y Formas**: Uso de `GraphicsPath` para módulos geométricos variados.
+  - **Redondeado Avanzado y Formas**: ✅ Implementado uso de `GraphicsPath` para módulos geométricos variados.
   - **Optimización E-Ink**: ✅ Implementado perfiles de alto contraste y desactivación de anti-aliasing.
 
 ### 🌐 Integraciones y Sistemas Externos
@@ -239,4 +239,4 @@ Para evolucionar `qrps` hacia un motor de grado industrial, se ha dividido el ro
 - **Restricciones**: No se implementan formatos propietarios cerrados como **SQRC** o **iQR**, ya que requieren algoritmos de cifrado y licencias específicas de DENSO WAVE.
 
 ---
-*Documentación actualizada al 27 de enero de 2026. Cumplimiento verificado bajo estándares ISO/IEC 18004:2024.*
+*Documentación actualizada al 28 de enero de 2026. Cumplimiento verificado bajo estándares ISO/IEC 18004:2024.*

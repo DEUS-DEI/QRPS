@@ -70,7 +70,11 @@ $script:GS1_AI = @{
 # Utility to ensure numbers use dot as decimal separator (for SVG/CSS)
 function ToDot($val) {
     if ($null -eq $val) { return "0" }
-    return [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, "{0}", $val)
+    try {
+        return [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, "{0:F3}", [double]$val)
+    } catch {
+        return "0"
+    }
 }
 
 # Utility to parse numbers from SVG/CSS (always expecting dot)
@@ -2395,26 +2399,28 @@ function ExportPng {
     
     # Insertar Logo
     if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
-        $logoExt = [System.IO.Path]::GetExtension($logoPath).ToLower()
-        if ($logoExt -eq ".png") {
-            try {
-                $logoBmp = [Drawing.Image]::FromFile($logoPath)
-                $lSize = ($baseUnits * $logoScale / 100) * $scale
-                $lPosRel = ($baseUnits * $scale - $lSize) / 2
-                $lx = $qrOffX + $lPosRel
-                $ly = $qrOffY + $lPosRel
-                
-                $bgBrush = [Drawing.SolidBrush]::new($bgColor)
-                $g.FillRectangle($bgBrush, [float]$lx, [float]$ly, [float]$lSize, [float]$lSize)
-                $bgBrush.Dispose()
-                
-                $g.DrawImage($logoBmp, [float]$lx, [float]$ly, [float]$lSize, [float]$lSize)
-                $logoBmp.Dispose()
-            } catch {
-                Write-Warning "No se pudo procesar el logo PNG: $_"
+                $logoExt = [System.IO.Path]::GetExtension($logoPath).ToLower()
+                if ($logoExt -eq ".png" -or $logoExt -eq ".jpg" -or $logoExt -eq ".jpeg") {
+                    try {
+                        $logoBmp = [Drawing.Image]::FromFile($logoPath)
+                        $lSize = ($baseUnits * $logoScale / 100) * $scale
+                        $lPosRel = ($baseUnits * $scale - $lSize) / 2
+                        $lx = $qrOffX + $lPosRel
+                        $ly = $qrOffY + $lPosRel
+                        
+                        $bgBrush = [Drawing.SolidBrush]::new($bgColor)
+                        $g.FillRectangle($bgBrush, [float]$lx, [float]$ly, [float]$lSize, [float]$lSize)
+                        $bgBrush.Dispose()
+                        
+                        $g.DrawImage($logoBmp, [float]$lx, [float]$ly, [float]$lSize, [float]$lSize)
+                        $logoBmp.Dispose()
+                    } catch {
+                        Write-Warning "No se pudo procesar el logo ($logoExt): $_"
+                    }
+                } elseif ($logoExt -eq ".svg") {
+                    Write-Warning "El logo SVG no es compatible con el formato PNG. Por favor, use un logo PNG o exporte a SVG."
+                }
             }
-        }
-    }
     
     $qrBrush.Dispose()
     $g.Dispose()
@@ -2588,7 +2594,7 @@ function ExportPngRect {
     # Insertar Logo
     if (-not [string]::IsNullOrEmpty($logoPath) -and (Test-Path $logoPath)) {
         $logoExt = [System.IO.Path]::GetExtension($logoPath).ToLower()
-        if ($logoExt -eq ".png") {
+        if ($logoExt -eq ".png" -or $logoExt -eq ".jpg" -or $logoExt -eq ".jpeg") {
             try {
                 $logoBmp = [Drawing.Image]::FromFile($logoPath)
                 $lSize = ([math]::Min($wUnits, $hUnits) * $logoScale / 100) * $scale
@@ -2602,8 +2608,10 @@ function ExportPngRect {
                 $g.DrawImage($logoBmp, [float]$lx, [float]$ly, [float]$lSize, [float]$lSize)
                 $logoBmp.Dispose()
             } catch {
-                Write-Warning "No se pudo procesar el logo PNG: $_"
+                Write-Warning "No se pudo procesar el logo ($logoExt): $_"
             }
+        } elseif ($logoExt -eq ".svg") {
+            Write-Warning "El logo SVG no es compatible con el formato PNG. Por favor, use un logo PNG o exporte a SVG."
         }
     }
     
@@ -2791,7 +2799,6 @@ function ExportPdfMultiNative {
     $objOffsets = New-Object System.Collections.Generic.List[long]
     $WriteStr = { param($s) $bytes = [System.Text.Encoding]::ASCII.GetBytes($s); $bw.Write($bytes) }
     
-    $ToDot = { param($v) ([string]("{0:F3}" -f $v)).Replace(',', '.') }
     $StartObj = {
         $objOffsets.Add($fs.Position)
         &$WriteStr "$($objOffsets.Count) 0 obj`n"
@@ -2799,18 +2806,24 @@ function ExportPdfMultiNative {
     
     $ToPdfColor = {
         param($hex)
-        if ([string]::IsNullOrEmpty($hex)) { return "0 0 0" }
-        $hex = $hex.Replace("#", "")
-        if ($hex.Length -eq 3) {
-            $r = [Convert]::ToInt32($hex.Substring(0, 1) * 2, 16) / 255.0
-            $g = [Convert]::ToInt32($hex.Substring(1, 1) * 2, 16) / 255.0
-            $b = [Convert]::ToInt32($hex.Substring(2, 1) * 2, 16) / 255.0
-        } else {
-            $r = [Convert]::ToInt32($hex.Substring(0, 2), 16) / 255.0
-            $g = [Convert]::ToInt32($hex.Substring(2, 2), 16) / 255.0
-            $b = [Convert]::ToInt32($hex.Substring(4, 2), 16) / 255.0
+        if ([string]::IsNullOrWhiteSpace($hex) -or $hex -eq "#") { return "0 0 0" }
+        $cleanHex = $hex.Replace("#", "")
+        try {
+            if ($cleanHex.Length -eq 3) {
+                $r = [Convert]::ToInt32($cleanHex.Substring(0, 1) * 2, 16) / 255.0
+                $g = [Convert]::ToInt32($cleanHex.Substring(1, 1) * 2, 16) / 255.0
+                $b = [Convert]::ToInt32($cleanHex.Substring(2, 1) * 2, 16) / 255.0
+            } elseif ($cleanHex.Length -eq 6) {
+                $r = [Convert]::ToInt32($cleanHex.Substring(0, 2), 16) / 255.0
+                $g = [Convert]::ToInt32($cleanHex.Substring(2, 2), 16) / 255.0
+                $b = [Convert]::ToInt32($cleanHex.Substring(4, 2), 16) / 255.0
+            } else {
+                return "0 0 0"
+            }
+            return "$(ToDot $r) $(ToDot $g) $(ToDot $b)"
+        } catch {
+            return "0 0 0"
         }
-        return "$(ToDot $r) $(ToDot $g) $(ToDot $b)"
     }
 
     $EscapePdfString = {
@@ -2846,6 +2859,11 @@ function ExportPdfMultiNative {
     $EmbedImage = {
         param($imgFilePath)
         try {
+            $ext = [System.IO.Path]::GetExtension($imgFilePath).ToLower()
+            if ($ext -eq ".svg") {
+                Write-Warning "El logo SVG no es compatible con el formato PDF nativo. Por favor, use un logo PNG/JPG o exporte a SVG."
+                return $null
+            }
             $bmp = [System.Drawing.Bitmap]::FromFile($imgFilePath)
             $ms = [System.IO.MemoryStream]::new()
             $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq "image/jpeg" }
@@ -2975,6 +2993,7 @@ function ExportPdfMultiNative {
                 $gradType = $item.gradType
                 $logoPath = $item.logoPath
                 $logoScale = $item.logoScale
+                $itemPath = $item.path
 
                 $baseW = if ($null -ne $m.Width) { $m.Width } else { $m.Size }
                 $baseH = if ($null -ne $m.Height) { $m.Height } else { $m.Size }
@@ -2993,8 +3012,8 @@ function ExportPdfMultiNative {
                 $innerY = $offsetY + ($cellH - $itemH) / 2
 
                 $fgColorPdf = &$ToPdfColor $foregroundColor
-                $bgColorPdf = &$ToPdfColor $backgroundColor
-                $fColorPdf = if ($frameColor) { &$ToPdfColor $frameColor } else { $fgColorPdf }
+                $bgColorPdf = if ([string]::IsNullOrWhiteSpace($backgroundColor) -or $backgroundColor -eq "#") { "1 1 1" } else { &$ToPdfColor $backgroundColor }
+                $fColorPdf = if ($frameColor -and $frameColor -ne "#") { &$ToPdfColor $frameColor } else { $fgColorPdf }
 
                 [void]$contentSb.AppendLine("q 1 0 0 1 $(ToDot $innerX) $(ToDot $innerY) cm")
                 [void]$contentSb.AppendLine("$bgColorPdf rg 0 0 $(ToDot $itemW) $(ToDot $itemH) re f")
@@ -3067,7 +3086,7 @@ function ExportPdfMultiNative {
                             if ($logoInfo) {
                                 $logoX = (($baseW + $quiet * 2 + $frameSize * 2) * $scale - $logoDrawW) / 2
                                 $logoY = (($baseH + $quiet * 2 + $frameSize * 2 + $textHeight) * $scale - $logoDrawW) / 2
-                                if ($x -ge $logoX -and $x -lt ($logoX + $logoDrawW) -and $y -ge $logoY -and $y -lt ($logoY + $logoDrawW)) { continue }
+                                if ($x -ge ($logoX - 0.5) -and $x -lt ($logoX + $logoDrawW + 0.5) -and $y -ge ($logoY - 0.5) -and $y -lt ($logoY + $logoDrawW + 0.5)) { continue }
                             }
 
                             if ($rounded -gt 0) {
@@ -3109,6 +3128,9 @@ function ExportPdfMultiNative {
                     $logoY = (($baseH + $quiet * 2 + $frameSize * 2 + $textHeight) * $scale - $logoDrawW) / 2
                     [void]$contentSb.AppendLine("q $(ToDot $logoDrawW) 0 0 $(ToDot $logoDrawW) $(ToDot $logoX) $(ToDot $logoY) cm /$imgName Do Q")
                 }
+
+                # Link al archivo original si existe (Opcional, para debug en el PDF)
+                # if ($itemPath) { [void]$contentSb.AppendLine("% Path: $itemPath") }
 
                 [void]$contentSb.AppendLine("Q")
             }
@@ -4297,14 +4319,16 @@ function Start-BatchProcessing {
         # Procesar columnas si hay tabs
         $cols = $trim -split "\t"
 
-        # Detectar encabezado
-        if ($firstLine -and ($trim -match "^Data\s" -or $trim -match "^Data`t" -or $trim -match "^Dato`t")) {
+        # Detectar encabezado (más robusto contra BOM y espacios)
+        if ($firstLine -and ($trim -match "Data" -or $trim -match "Dato")) {
             for ($i=0; $i -lt $cols.Count; $i++) {
-                $h = $cols[$i].Trim().ToLower()
+                $h = $cols[$i].Trim().ToLower().Replace("`ufeff", "")
                 $headerMap[$h] = $i
             }
-            $firstLine = $false
-            continue
+            if ($headerMap.ContainsKey("data") -or $headerMap.ContainsKey("dato")) {
+                $firstLine = $false
+                continue
+            }
         }
         $firstLine = $false
         
@@ -4344,6 +4368,11 @@ function Start-BatchProcessing {
         $rowModel = &$getRowVal "Model" $Model
         $rowMicroVersion = &$getRowVal "MicroVersion" $MicroVersion
         
+        # Nuevas columnas
+        $rowNombreArchivo = &$getRowVal "NombreArchivo" ""
+        $rowFormatoSalida = &$getRowVal "FormatoSalida" ""
+        $rowUnificarPDF = &$getRowVal "UnificarPDF" "" # si, no o vacio (usa global)
+        
         # Extraer textos adicionales para debajo del QR
         $bottomText = @()
         if ($headerMap.Count -gt 0) {
@@ -4357,7 +4386,7 @@ function Start-BatchProcessing {
                 $bottomText = $labels
             } else {
                 # Fallback: incluir solo columnas que NO son parámetros conocidos
-                $knownParams = @("data", "dato", "color", "color2", "bgcolor", "rounded", "frame", "logo", "symbol", "model", "microversion", "frametext", "foregroundcolor", "backgroundcolor")
+                $knownParams = @("data", "dato", "color", "color2", "bgcolor", "rounded", "frame", "logo", "symbol", "model", "microversion", "frametext", "foregroundcolor", "backgroundcolor", "nombrearchivo", "formatosalida", "unificarpdf")
                 foreach ($h in $headerMap.Keys) {
                     if ($knownParams -notcontains $h) {
                         $v = &$getRowVal $h ""
@@ -4376,7 +4405,9 @@ function Start-BatchProcessing {
         
         # Determinar nombre base
         $baseName = ""
-        if ($useConsec) {
+        if (-not [string]::IsNullOrEmpty($rowNombreArchivo)) {
+            $baseName = Clean-Name $rowNombreArchivo
+        } elseif ($useConsec) {
             $baseName = "$count"
         } else {
             # Sanitizar nombre basado únicamente en los datos de la columna seleccionada
@@ -4388,46 +4419,57 @@ function Start-BatchProcessing {
         $nameParts = @($prefix, $baseName)
         if (-not [string]::IsNullOrEmpty($suffix)) { $nameParts += $suffix }
         if ($useTs) { $nameParts += "_" + (Get-Date -Format $tsFormat) }
-        $formats = @((Get-IniValue $iniContent "QRPS" "QRPS_FormatoSalida" "svg").ToLower() -split ',' | ForEach-Object { $_.Trim() })
+        
+        # Formatos: Priorizar el de la fila
+        $formatsRaw = if (-not [string]::IsNullOrEmpty($rowFormatoSalida)) { $rowFormatoSalida } else { (Get-IniValue $iniContent "QRPS" "QRPS_FormatoSalida" "svg") }
+        $formats = @($formatsRaw.ToLower() -split ',' | ForEach-Object { $_.Trim() })
         
         foreach ($fmt in $formats) {
-            if ($fmt -eq "pdf" -and $pdfUnico) {
-                try {
-                        # Parámetros para generación posterior
-                        $collectedPages += [PSCustomObject]@{
-                            data = $dataToEncode
-                            ecLevel = $ecLevel
-                            version = $version
-                            modSize = $modSize
-                            eciVal = $eciVal
-                            rowSymbol = $rowSymbol
-                            rowModel = $rowModel
-                            rowMicroVersion = $rowMicroVersion
-                            fnc1First = $Fnc1First
-                            fnc1Second = $Fnc1Second
-                            fnc1AppInd = $Fnc1ApplicationIndicator
-                            saIndex = $StructuredAppendIndex
-                            saTotal = $StructuredAppendTotal
-                            saParity = $StructuredAppendParity
-                            saParityData = $StructuredAppendParityData
-                            rowLogo = $rowLogo
-                            logoScale = $logoScaleIni
-                            bottomText = $bottomText
-                            rowFg = $rowFg
-                            rowFg2 = $rowFg2
-                            rowBg = $rowBg
-                            rowRounded = $rowRounded
-                            gradType = $gradTypeIni
-                            rowFrame = $rowFrame
-                            frameColor = $rowFrameColor
-                            fontFamily = $fontFamilyIni
-                            googleFont = $googleFontIni
-                        }
-                } catch {
-                    Write-Error "Error recolectando datos para pÃ¡gina PDF '$dataToEncode': $_"
-                }
-                continue
+            # Unificar PDF logic: Priorizar el de la fila
+            $actualPdfUnico = if (-not [string]::IsNullOrEmpty($rowUnificarPDF)) { 
+                $rowUnificarPDF -eq "si" 
+            } else { 
+                $pdfUnico 
             }
+
+                if ($fmt -eq "pdf" -and $actualPdfUnico) {
+                    try {
+                            # Parámetros para generación posterior
+                            $collectedPages += [PSCustomObject]@{
+                                data = $dataToEncode
+                                ecLevel = $ecLevel
+                                version = $version
+                                modSize = $modSize
+                                eciVal = $eciVal
+                                rowSymbol = $rowSymbol
+                                rowModel = $rowModel
+                                rowMicroVersion = $rowMicroVersion
+                                fnc1First = $Fnc1First
+                                fnc1Second = $Fnc1Second
+                                fnc1AppInd = $Fnc1ApplicationIndicator
+                                saIndex = $StructuredAppendIndex
+                                saTotal = $StructuredAppendTotal
+                                saParity = $StructuredAppendParity
+                                saParityData = $StructuredAppendParityData
+                                rowLogo = $rowLogo
+                                logoScale = $logoScaleIni
+                                bottomText = $bottomText
+                                rowFg = $rowFg
+                                rowFg2 = $rowFg2
+                                rowBg = $rowBg
+                                rowRounded = $rowRounded
+                                gradType = $gradTypeIni
+                                rowFrame = $rowFrame
+                                frameColor = $rowFrameColor
+                                fontFamily = $fontFamilyIni
+                                googleFont = $googleFontIni
+                                path = $finalPath
+                            }
+                    } catch {
+                        Write-Error "Error recolectando datos para página PDF '$dataToEncode': $_"
+                    }
+                    continue
+                }
 
             $ext = switch ($fmt) {
                 "svg" { ".svg" }
@@ -4456,8 +4498,8 @@ function Start-BatchProcessing {
         
         $pagesForNative = New-Object System.Collections.ArrayList
         foreach ($p in $collectedPages) {
-            # Obtener la matriz llamando a New-QRCode (sin exportar a archivo)
-            $m = New-QRCode -Data $p.data -OutputPath $null -ECLevel $p.ecLevel -Version $p.version -ModuleSize $p.modSize -EciValue $p.eciVal -Symbol $p.rowSymbol -Model $p.rowModel -MicroVersion $p.rowMicroVersion -Fnc1First:$p.fnc1First -Fnc1Second:$p.fnc1Second -Fnc1ApplicationIndicator $p.fnc1AppInd -StructuredAppendIndex $p.saIndex -StructuredAppendTotal $p.saTotal -StructuredAppendParity $p.saParity -StructuredAppendParityData $p.saParityData
+            # Obtener la matriz llamando New-QRCode (sin exportar a archivo)
+            $m = New-QRCode -Data $p.data -OutputPath $null -ECLevel $p.ecLevel -Version $p.version -ModuleSize $p.modSize -EciValue $p.eciVal -Symbol $p.rowSymbol -Model $p.rowModel -MicroVersion $p.rowMicroVersion -Fnc1First:$p.fnc1First -Fnc1Second:$p.fnc1Second -Fnc1ApplicationIndicator $p.fnc1AppInd -StructuredAppendIndex $p.saIndex -StructuredAppendTotal $p.saTotal -StructuredAppendParity $p.saParity -StructuredAppendParityData $p.saParityData -LogoPath $p.rowLogo -LogoScale $p.logoScale
             
             [void]$pagesForNative.Add([PSCustomObject]@{
                 type = "QR"
@@ -4474,6 +4516,7 @@ function Start-BatchProcessing {
                 frameColor = $p.frameColor
                 logoPath = $p.rowLogo
                 logoScale = $p.logoScale
+                path = $p.path
             })
         }
         ExportPdfMultiNative -pages $pagesForNative -path $finalPdfPath -layout $pdfLayout

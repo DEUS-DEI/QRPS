@@ -226,9 +226,23 @@ Copia y pega estos datos en un archivo de texto (ej: `mis_datos.tsv`) para proce
 | `Datos con Ñ, á, é...` | `UTF8` | Caracteres Especiales |
 
 ### Personalización con Logos
-El motor permite incrustar logos en formato SVG o PNG. Al detectar un logo, el sistema fuerza automáticamente el nivel de error a **H (High)** para garantizar la lectura.
+
+El motor permite incrustar logos en formato **SVG, PNG o JPG**. Al detectar un logo, el sistema fuerza automáticamente el nivel de error a **H (High)** para garantizar la lectura, incluso con la obstrucción central.
+
+#### 🛠️ Matriz de Compatibilidad de Logos
+
+| Formato Salida | Logo SVG | Logo PNG/JPG | Notas |
+| :--- | :---: | :---: | :--- |
+| **SVG** | ✅ | ✅ | El logo SVG se incrusta como vectores; el PNG como Base64. |
+| **PDF (Nativo)** | ❌ | ✅ | Requiere logos rasterizados (PNG/JPG) para el motor binario. |
+| **PNG** | ❌ | ✅ | Requiere logos rasterizados (PNG/JPG). |
+
+> [!TIP]
+> Si utilizas el procesamiento por lotes (TSV), asegúrate de que el nombre de la columna sea exactamente `Logo`. El motor es ahora robusto contra caracteres invisibles (BOM) en los encabezados.
+
 ```powershell
-.\QRCode.ps1 -Data "Dato con Logo" -LogoPath ".\Docs\logo.svg" -LogoScale 20 -OutputPath "qr_logo.svg"
+# Ejemplo: Generar QR con logo PNG (máxima compatibilidad)
+.\QRCode.ps1 -Data "Dato con Logo" -LogoPath ".\logo.png" -LogoScale 20 -OutputPath "qr_final.pdf"
 ```
 
 ### rMQR (Rectangular)

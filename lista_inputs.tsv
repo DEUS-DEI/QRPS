@@ -1,8 +1,13 @@
-Data	Label1	Label2	Color	Color2	BgColor	Rounded	Frame	Logo	Symbol	Descripción
-https://www.google.com	Google	Buscador	#4285F4	#34A853	#FFFFFF	0.5	GOOGLE	#	QR	QR Estándar con colores y marco
-WIFI:S:MiRed;T:WPA;P:1234;;	WiFi Casa	Seguro	#FF5722	#BF360C	#FFF3E0	0	CONECTAR	#	QR	WiFi con degradado y colores cálidos
-BEGIN:VCARD;VERSION:3.0;FN:Juan;TEL:123;END:VCARD	Contacto	Juan Perez	#000000	#444444	#FFFFFF	0.3	#	#	QR	vCard clásica redondeada
-Dato Micro	MicroQR	M3	#00008B	#	#FFFFFF	0	#	#	MicroQR	Micro QR Azul
-Dato Rectangular	rMQR	R12x59	#2E7D32	#	#E8F5E9	0	#	#	rMQR	rMQR Rectangular Verde
-https://github.com	GitHub	Repo	#24292e	#	#ffffff	0.2	#	.\Docs\logo.svg	QR	QR con Logo (requiere logo.svg)
-Texto con Ñ y á	Español	UTF-8	#6A1B9A	#AD1457	#F3E5F5	0.8	ESPAÑA	#	QR	QR muy redondeado con caracteres especiales
+Data	Label1	Label2	Color	Color2	BgColor	Rounded	Frame	Logo	Symbol	Descripción	NombreArchivo	FormatoSalida	UnificarPDF
+https://www.google.com	Google	Buscador	#4285F4	#34A853	#FFFFFF	0.5	GOOGLE	#	QR	QR Estándar con colores y marco	google_qr	pdf	si
+WIFI:S:MiRed;T:WPA;P:1234;;	WiFi Casa	Seguro	#FF5722	#BF360C	#FFF3E0	0	CONECTAR	#	QR	WiFi con degradado y colores cálidos	wifi_qr	png	no
+BEGIN:VCARD;VERSION:3.0;FN:Juan;TEL:123;END:VCARD	Contacto	Juan Perez	#000000	#444444	#FFFFFF	0.3	#	#	QR	vCard clásica redondeada	contacto_juan	pdf	si
+Dato Micro	MicroQR	M3	#00008B	#	#FFFFFF	0	#	#	Micro	Micro QR Azul	micro_azul	pdf	no
+Dato Rectangular	rMQR	R12x59	#2E7D32	#	#E8F5E9	0	#	#	rMQR	rMQR Rectangular Verde	rmqr_verde	svg	no
+https://github.com	GitHub	Repo	#24292e	#	#ffffff	0.2	#	SVG_logo.svg	QR	QR con Logo (requiere logo.svg)	github_logo	pdf	si
+Texto con Ñ y á	Español	UTF-8	#6A1B9A	#AD1457	#F3E5F5	0.8	ESPAÑA	#	QR	QR muy redondeado con caracteres especiales	texto_esp	pdf	si
+https://wa.me/1234567890	WhatsApp	Mensaje	#25D366	#128C7E	#FFFFFF	0.4	WHATSAPP	#	QR	Enlace a WhatsApp con colores oficiales	whatsapp_link	pdf,png	si
+https://www.linkedin.com/in/perfil	LinkedIn	Profile	#0077B5	#	#FFFFFF	0	CONECTAR	#	QR	Perfil profesional LinkedIn	linkedin_perfil	svg,pdf	si
+https://www.youtube.com/watch?v=dQw4w9WgXcQ	YouTube	Video	#FF0000	#	#FFFFFF	1.0	YOUTUBE	#	QR	QR circular (Redondeado 1.0)	youtube_video	pdf	no
+MATMSG:TO:test@example.com;SUB:Hola;BODY:Cuerpo;;	Email	Enviar	#000000	#555555	#EEEEEE	0.2	#	#	QR	Email pre-configurado	email_test	pdf	si
+SMSTO:12345678:Hola esto es un test	SMS	Enviar	#007AFF	#	#FFFFFF	0.5	SMS	#	QR	SMS pre-configurado estilo iOS	sms_test	png	no

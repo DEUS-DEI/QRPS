@@ -95,6 +95,9 @@ Para mas detalles, consulta el archivo README.md.
 # Cargar ensamblados necesarios
 Add-Type -AssemblyName System.Drawing
 
+# Cache de matrices pre-inicializadas para optimización (Sincronizado para hilos)
+$script:MATRIX_CACHE = [hashtable]::Synchronized(@{})
+
 # GF(256) lookup tables
 $script:EXP = @(1,2,4,8,16,32,64,128,29,58,116,232,205,135,19,38,76,152,45,90,180,117,234,201,143,3,6,12,24,48,96,192,157,39,78,156,37,74,148,53,106,212,181,119,238,193,159,35,70,140,5,10,20,40,80,160,93,186,105,210,185,111,222,161,95,190,97,194,153,47,94,188,101,202,137,15,30,60,120,240,253,231,211,187,107,214,177,127,254,225,223,163,91,182,113,226,217,175,67,134,17,34,68,136,13,26,52,104,208,189,103,206,129,31,62,124,248,237,199,147,59,118,236,197,151,51,102,204,133,23,46,92,184,109,218,169,79,158,33,66,132,21,42,84,168,77,154,41,82,164,85,170,73,146,57,114,228,213,183,115,230,209,191,99,198,145,63,126,252,229,215,179,123,246,241,255,227,219,171,75,150,49,98,196,149,55,110,220,165,87,174,65,130,25,50,100,200,141,7,14,28,56,112,224,221,167,83,166,81,162,89,178,121,242,249,239,195,155,43,86,172,69,138,9,18,36,72,144,61,122,244,245,247,243,251,235,203,139,11,22,44,88,176,125,250,233,207,131,27,54,108,216,173,71,142,1)
 $script:LOG = @(0,0,1,25,2,50,26,198,3,223,51,238,27,104,199,75,4,100,224,14,52,141,239,129,28,193,105,248,200,8,76,113,5,138,101,47,225,36,15,33,53,147,142,218,240,18,130,69,29,181,194,125,106,39,249,185,201,154,9,120,77,228,114,166,6,191,139,98,102,221,48,253,226,152,37,179,16,145,34,136,54,208,148,206,143,150,219,189,241,210,19,92,131,56,70,64,30,66,182,163,195,72,126,110,107,58,40,84,250,133,186,61,202,94,155,159,10,21,121,43,78,212,229,172,115,243,167,87,7,112,192,247,140,128,99,13,103,74,222,237,49,197,254,24,227,165,153,119,38,184,180,124,17,68,146,217,35,32,137,46,55,63,209,91,149,188,207,205,144,135,151,178,220,252,190,97,242,86,211,171,20,42,93,158,132,60,57,83,71,109,65,162,31,45,67,216,183,123,164,118,196,23,73,236,127,12,111,246,108,161,59,82,41,157,85,170,251,96,134,177,187,204,62,90,203,89,95,176,156,169,160,81,11,245,22,235,122,117,44,215,79,174,213,233,230,231,173,232,116,214,244,234,168,80,88,175)
@@ -317,6 +320,11 @@ function DecodeRMQRStream($bytes, $spec) {
 }
 
 function InitRMQRMatrix($spec) {
+    $cacheKey = "RMQR-$($spec.H)x$($spec.W)"
+    if ($script:MATRIX_CACHE.ContainsKey($cacheKey)) {
+        return CopyM $script:MATRIX_CACHE[$cacheKey]
+    }
+
     $h = $spec.H; $w = $spec.W
     $m = @{ Height = $h; Width = $w; Mod = @{}; Func = @{} }
     for ($r = 0; $r -lt $h; $r++) { for ($c = 0; $c -lt $w; $c++) { $m.Mod["$r,$c"]=0; $m.Func["$r,$c"]=$false } }
@@ -360,6 +368,8 @@ function InitRMQRMatrix($spec) {
     # Our SPEC has D, H, W, VI, etc. but doesn't explicitly list sub-finders.
     # However, the current implementation in New-QRCode doesn't add them either.
     
+    # Guardar en cache antes de retornar
+    $script:MATRIX_CACHE[$cacheKey] = CopyM $m
     return $m
 }
 
@@ -937,6 +947,11 @@ function GetMicroCap($ver, $ec, $mode) {
 }
 
 function InitMicroM($ver) {
+    $cacheKey = "Micro-$ver"
+    if ($script:MATRIX_CACHE.ContainsKey($cacheKey)) {
+        return CopyM $script:MATRIX_CACHE[$cacheKey]
+    }
+
     $size = GetMicroSize $ver
     $m = NewM $size
     AddFinder $m 0 0
@@ -951,6 +966,9 @@ function InitMicroM($ver) {
             if (-not (IsF $m $i 8)) { $m.Func["$i,8"] = $true }
         }
     }
+    
+    # Guardar en cache
+    $script:MATRIX_CACHE[$cacheKey] = CopyM $m
     return $m
 }
 
@@ -1563,6 +1581,17 @@ function BuildCW($data, $ver, $ec) {
 
 function GetSize($v) { return 17 + $v * 4 }
 
+function CopyM($m) {
+    $size = if ($m.Size) { $m.Size } else { 0 }
+    $new = if ($size -gt 0) { NewM $size } else { @{ Height = $m.Height; Width = $m.Width; Mod = @{}; Func = @{} } }
+    
+    # Copiar diccionarios de forma eficiente
+    foreach ($k in $m.Mod.Keys) { $new.Mod[$k] = $m.Mod[$k] }
+    foreach ($k in $m.Func.Keys) { $new.Func[$k] = $m.Func[$k] }
+    
+    return $new
+}
+
 function NewM($size) {
     $m = @{}
     $m.Size = $size
@@ -1636,6 +1665,11 @@ function AddVersionInfo($m, $ver) {
 }
 
 function InitM($ver, $model) {
+    $cacheKey = "QR-$ver-$model"
+    if ($script:MATRIX_CACHE.ContainsKey($cacheKey)) {
+        return CopyM $script:MATRIX_CACHE[$cacheKey]
+    }
+
     $size = GetSize $ver
     $m = NewM $size
     
@@ -1671,6 +1705,8 @@ function InitM($ver, $model) {
     
     AddVersionInfo $m $ver
     
+    # Guardar en cache antes de retornar
+    $script:MATRIX_CACHE[$cacheKey] = CopyM $m
     return $m
 }
 
@@ -1987,7 +2023,7 @@ function Decode-rMQRMatrix($m) {
     $de = if ($fi.EC -eq 'H') { $spec.H2 } else { $spec.M }
     
     # 1. Re-inicializar para marcar funciones y desenmascarar
-    $temp = InitRMQR $h $w
+    $temp = InitRMQRMatrix $spec
     $m.Func = $temp.Func
     
     # rMQR siempre usa XOR 0 para datos según ISO 18004:2024 (el formato tiene su propia máscara)
@@ -4335,7 +4371,8 @@ function Start-BatchProcessing {
         [string]$GoogleFont = "",
         [switch]$PdfUnico = $false,
         [string]$PdfUnicoNombre = "",
-        [string]$Layout = "Default"
+        [string]$Layout = "Default",
+        [int]$MaxThreads = -1
     )
     
     if (-not (Test-Path $IniPath) -and [string]::IsNullOrEmpty($InputFileOverride)) { 
@@ -4416,6 +4453,7 @@ function Start-BatchProcessing {
      $pdfUnico = if ($PdfUnico) { $true } else { (Get-IniValue $iniContent "QRPS" "QRPS_PdfUnico" "no") -eq "si" }
      $pdfUnicoNombre = if (-not [string]::IsNullOrEmpty($PdfUnicoNombre)) { $PdfUnicoNombre } else { Get-IniValue $iniContent "QRPS" "QRPS_PdfUnicoNombre" "qr_combinado.pdf" }
      $pdfLayout = if ($Layout -ne "Default") { $Layout } else { Get-IniValue $iniContent "QRPS" "QRPS_Layout" "Default" }
+     $actualMaxThreads = if ($MaxThreads -ge 0) { $MaxThreads } else { [int](Get-IniValue $iniContent "QRPS" "QRPS_MaxThreads" "1") }
     
     # Si hay logo en config, forzamos EC Level H
     if (-not [string]::IsNullOrEmpty($logoPathIni)) {
@@ -4441,11 +4479,11 @@ function Start-BatchProcessing {
         }
     }
     
-    # Procesar lÃ­neas
+    # Procesar líneas
     $lines = Get-Content $inputPath -Encoding UTF8
-    $count = 1
+    $taskIndex = 0
     
-    $collectedPages = @()
+    $itemsToProcess = New-Object System.Collections.Generic.List[hashtable]
     
     $headerMap = @{}
     $firstLine = $true
@@ -4469,7 +4507,7 @@ function Start-BatchProcessing {
         }
         $firstLine = $false
         
-        # Mapeo de datos por encabezado o por Ã­ndice
+        # Mapeo de datos por encabezado o por índice
         $getRowVal = {
              param($key, $default)
              if ($headerMap.ContainsKey($key.ToLower())) {
@@ -4545,7 +4583,7 @@ function Start-BatchProcessing {
         if (-not [string]::IsNullOrEmpty($rowNombreArchivo)) {
             $baseName = Clean-Name $rowNombreArchivo
         } elseif ($useConsec) {
-            $baseName = "$count"
+            $baseName = "$($taskIndex + 1)"
         } else {
             # Sanitizar nombre basado únicamente en los datos de la columna seleccionada
             $baseName = Clean-Name $dataToEncode
@@ -4569,93 +4607,187 @@ function Start-BatchProcessing {
                 $pdfUnico 
             }
 
-                if ($fmt -eq "pdf" -and $actualPdfUnico) {
-                    try {
-                            # Parámetros para generación posterior
-                            $collectedPages += [PSCustomObject]@{
-                                data = $dataToEncode
-                                ecLevel = $ecLevel
-                                version = $version
-                                modSize = $modSize
-                                eciVal = $eciVal
-                                rowSymbol = $rowSymbol
-                                rowModel = $rowModel
-                                rowMicroVersion = $rowMicroVersion
-                                fnc1First = $Fnc1First
-                                fnc1Second = $Fnc1Second
-                                fnc1AppInd = $Fnc1ApplicationIndicator
-                                saIndex = $StructuredAppendIndex
-                                saTotal = $StructuredAppendTotal
-                                saParity = $StructuredAppendParity
-                                saParityData = $StructuredAppendParityData
-                                rowLogo = $rowLogo
-                                logoScale = $logoScaleIni
-                                bottomText = $bottomText
-                                rowFg = $rowFg
-                                rowFg2 = $rowFg2
-                                rowBg = $rowBg
-                                rowRounded = $rowRounded
-                                gradType = $gradTypeIni
-                                rowFrame = $rowFrame
-                                frameColor = $rowFrameColor
-                                fontFamily = $fontFamilyIni
-                                googleFont = $googleFontIni
-                                path = $finalPath
-                            }
-                    } catch {
-                        Write-Error "Error recolectando datos para página PDF '$dataToEncode': $_"
-                    }
-                    continue
+            $itemsToProcess.Add(@{
+                Index = $taskIndex
+                Data = $dataToEncode
+                Format = $fmt
+                PdfUnico = $actualPdfUnico
+                Params = @{
+                    ECLevel = $ecLevel
+                    Version = $version
+                    ModuleSize = $modSize
+                    EciValue = $eciVal
+                    Symbol = $rowSymbol
+                    Model = $rowModel
+                    MicroVersion = $rowMicroVersion
+                    Fnc1First = $Fnc1First
+                    Fnc1Second = $Fnc1Second
+                    Fnc1ApplicationIndicator = $Fnc1ApplicationIndicator
+                    StructuredAppendIndex = $StructuredAppendIndex
+                    StructuredAppendTotal = $StructuredAppendTotal
+                    StructuredAppendParity = $StructuredAppendParity
+                    StructuredAppendParityData = $StructuredAppendParityData
+                    LogoPath = $rowLogo
+                    LogoScale = $logoScaleIni
+                    BottomText = $bottomText
+                    ForegroundColor = $rowFg
+                    ForegroundColor2 = $rowFg2
+                    BackgroundColor = $rowBg
+                    Rounded = $rowRounded
+                    GradientType = $gradTypeIni
+                    FrameText = $rowFrame
+                    FrameColor = $rowFrameColor
+                    FontFamily = $fontFamilyIni
+                    GoogleFont = $googleFontIni
+                    NameParts = $nameParts
                 }
+            })
+        }
+        $taskIndex++
+    }
 
-            $ext = switch ($fmt) {
-                "svg" { ".svg" }
-                "pdf" { ".pdf" }
-                "png" { ".png" }
-                default { ".png" }
+    $collectedPages = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
+    $totalTasks = $itemsToProcess.Count
+    $completedTasks = 0
+
+    if ($actualMaxThreads -gt 1 -and $totalTasks -gt 1) {
+        Write-Status "`nIniciando procesamiento en paralelo ($actualMaxThreads hilos) para $totalTasks tareas..."
+        
+        $scriptBlock = {
+            param($item, $outPath, $scriptPath)
+            . $scriptPath
+            
+            $p = $item.Params
+            $fmt = $item.Format
+            $ext = switch ($fmt) { "svg" { ".svg" } "pdf" { ".pdf" } "png" { ".png" } default { ".png" } }
+            $name = ($p.NameParts -join "") + $ext
+            $finalPath = Join-Path $outPath $name
+            
+            try {
+                if ($item.PdfUnico -and $fmt -eq "pdf") {
+                    # Solo generar matriz para PDF único
+                    $m = New-QRCode -Data $item.Data -OutputPath $null -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale
+                    return @{ 
+                        Index = $item.Index; 
+                        Type = "PDFPage"; 
+                        Data = @{
+                            type = "QR"
+                            m = $m
+                            scale = $p.ModuleSize
+                            quiet = 4
+                            fg = $p.ForegroundColor
+                            fg2 = $p.ForegroundColor2
+                            bg = $p.BackgroundColor
+                            gradType = $p.GradientType
+                            text = $p.BottomText
+                            rounded = $p.Rounded
+                            frame = $p.FrameText
+                            frameColor = $p.FrameColor
+                            logoPath = $p.LogoPath
+                            logoScale = $p.LogoScale
+                            path = $finalPath
+                            originalIndex = $item.Index
+                        }
+                    }
+                } else {
+                    New-QRCode -Data $item.Data -OutputPath $finalPath -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale -BottomText $p.BottomText -ForegroundColor $p.ForegroundColor -ForegroundColor2 $p.ForegroundColor2 -BackgroundColor $p.BackgroundColor -Rounded $p.Rounded -GradientType $p.GradientType -FrameText $p.FrameText -FrameColor $p.FrameColor -FontFamily $p.FontFamily -GoogleFont $p.GoogleFont
+                    return @{ Index = $item.Index; Type = "File"; Path = $finalPath }
+                }
+            } catch {
+                return @{ Index = $item.Index; Type = "Error"; Error = $_.ToString(); Data = $item.Data }
             }
-            $name = ($nameParts -join "") + $ext
+        }
+
+        $pool = [RunspaceFactory]::CreateRunspacePool(1, $actualMaxThreads)
+        $pool.Open()
+        $tasks = New-Object System.Collections.Generic.List[hashtable]
+
+        foreach ($item in $itemsToProcess) {
+            $ps = [powershell]::Create().AddScript($scriptBlock).AddArgument($item).AddArgument($outPath).AddArgument($PSCommandPath)
+            $ps.RunspacePool = $pool
+            $tasks.Add(@{ PS = $ps; Handle = $ps.BeginInvoke() })
+        }
+
+        while ($tasks.Count -gt 0) {
+            $done = $tasks | Where-Object { $_.Handle.IsCompleted }
+            foreach ($t in $done) {
+                $res = $t.PS.EndInvoke($t.Handle)
+                if ($res.Type -eq "PDFPage") { 
+                    # El resultado es un Hashtable del scriptblock, lo convertimos a PSCustomObject para Sort-Object
+                    $obj = [PSCustomObject]$res.Data
+                    [void]$collectedPages.Add($obj) 
+                }
+                elseif ($res.Type -eq "Error") { Write-Error "Error en tarea $($res.Index) para '$($res.Data)': $($res.Error)" }
+                
+                $t.PS.Dispose()
+                [void]$tasks.Remove($t)
+                $completedTasks++
+                if ($completedTasks % 10 -eq 0 -or $completedTasks -eq $totalTasks) {
+                    Write-Progress -Activity "Generando QRs en paralelo" -Status "$completedTasks / $totalTasks completados" -PercentComplete (($completedTasks / $totalTasks) * 100)
+                }
+            }
+            if ($tasks.Count -gt 0) { Start-Sleep -Milliseconds 50 }
+        }
+        $pool.Close()
+        $pool.Dispose()
+        Write-Host "" # Nueva linea despues de progreso
+    } else {
+        # Procesamiento secuencial
+        foreach ($item in $itemsToProcess) {
+            $p = $item.Params
+            $fmt = $item.Format
+            $ext = switch ($fmt) { "svg" { ".svg" } "pdf" { ".pdf" } "png" { ".png" } default { ".png" } }
+            $name = ($p.NameParts -join "") + $ext
             $finalPath = Join-Path $outPath $name
             
             if ($PSCmdlet.ShouldProcess($finalPath, "Generar QR ($fmt)")) {
                 try {
-                    New-QRCode -Data $dataToEncode -OutputPath $finalPath -ECLevel $ecLevel -Version $version -ModuleSize $modSize -EciValue $eciVal -Symbol $rowSymbol -Model $rowModel -MicroVersion $rowMicroVersion -Fnc1First:$Fnc1First -Fnc1Second:$Fnc1Second -Fnc1ApplicationIndicator $Fnc1ApplicationIndicator -StructuredAppendIndex $StructuredAppendIndex -StructuredAppendTotal $StructuredAppendTotal -StructuredAppendParity $StructuredAppendParity -StructuredAppendParityData $StructuredAppendParityData -LogoPath $rowLogo -LogoScale $logoScaleIni -BottomText $bottomText -ForegroundColor $rowFg -ForegroundColor2 $rowFg2 -BackgroundColor $rowBg -Rounded $rowRounded -GradientType $gradTypeIni -FrameText $rowFrame -FrameColor $rowFrameColor -FontFamily $fontFamilyIni -GoogleFont $googleFontIni
+                    if ($item.PdfUnico -and $fmt -eq "pdf") {
+                        $m = New-QRCode -Data $item.Data -OutputPath $null -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale
+                        [void]$collectedPages.Add([PSCustomObject]@{
+                            type = "QR"
+                            m = $m
+                            scale = $p.ModuleSize
+                            quiet = 4
+                            fg = $p.ForegroundColor
+                            fg2 = $p.ForegroundColor2
+                            bg = $p.BackgroundColor
+                            gradType = $p.GradientType
+                            text = $p.BottomText
+                            rounded = $p.Rounded
+                            frame = $p.FrameText
+                            frameColor = $p.FrameColor
+                            logoPath = $p.LogoPath
+                            logoScale = $p.LogoScale
+                            path = $finalPath
+                            originalIndex = $item.Index
+                        })
+                    } else {
+                        New-QRCode -Data $item.Data -OutputPath $finalPath -ECLevel $p.ECLevel -Version $p.Version -ModuleSize $p.ModuleSize -EciValue $p.EciValue -Symbol $p.Symbol -Model $p.Model -MicroVersion $p.MicroVersion -Fnc1First:$p.Fnc1First -Fnc1Second:$p.Fnc1Second -Fnc1ApplicationIndicator $p.Fnc1ApplicationIndicator -StructuredAppendIndex $p.StructuredAppendIndex -StructuredAppendTotal $p.StructuredAppendTotal -StructuredAppendParity $p.StructuredAppendParity -StructuredAppendParityData $p.StructuredAppendParityData -LogoPath $p.LogoPath -LogoScale $p.LogoScale -BottomText $p.BottomText -ForegroundColor $p.ForegroundColor -ForegroundColor2 $p.ForegroundColor2 -BackgroundColor $p.BackgroundColor -Rounded $p.Rounded -GradientType $p.GradientType -FrameText $p.FrameText -FrameColor $p.FrameColor -FontFamily $p.FontFamily -GoogleFont $p.GoogleFont
+                    }
                 } catch {
-                    Write-Error "Error generando QR ($fmt) para '$dataToEncode': $_"
+                    Write-Error "Error generando QR ($fmt) para '$($item.Data)': $_"
                 }
             }
+            $completedTasks++
+            if ($completedTasks % 10 -eq 0 -or $completedTasks -eq $totalTasks) {
+                Write-Progress -Activity "Generando QRs secuencialmente" -Status "$completedTasks / $totalTasks completados" -PercentComplete (($completedTasks / $totalTasks) * 100)
+            }
         }
-        $count++
     }
-    
+
     # Generar PDF Único si hay páginas recolectadas
     if ($collectedPages.Count -gt 0) {
         $finalPdfPath = Join-Path $outPath $pdfUnicoNombre
         Write-Status "`nGenerando PDF Único Nativo de $($collectedPages.Count) páginas..."
         
+        # Asegurar orden si se procesó en paralelo
+        $sortedPages = $collectedPages | Sort-Object { $_.originalIndex }
+        
+        # Convertir de nuevo a ArrayList para la función
         $pagesForNative = New-Object System.Collections.ArrayList
-        foreach ($p in $collectedPages) {
-            # Obtener la matriz llamando New-QRCode (sin exportar a archivo)
-            $m = New-QRCode -Data $p.data -OutputPath $null -ECLevel $p.ecLevel -Version $p.version -ModuleSize $p.modSize -EciValue $p.eciVal -Symbol $p.rowSymbol -Model $p.rowModel -MicroVersion $p.rowMicroVersion -Fnc1First:$p.fnc1First -Fnc1Second:$p.fnc1Second -Fnc1ApplicationIndicator $p.fnc1AppInd -StructuredAppendIndex $p.saIndex -StructuredAppendTotal $p.saTotal -StructuredAppendParity $p.saParity -StructuredAppendParityData $p.saParityData -LogoPath $p.rowLogo -LogoScale $p.logoScale
-            
-            [void]$pagesForNative.Add([PSCustomObject]@{
-                type = "QR"
-                m = $m
-                scale = $p.modSize
-                quiet = 4
-                fg = $p.rowFg
-                fg2 = $p.rowFg2
-                bg = $p.rowBg
-                gradType = $p.gradType
-                text = $p.bottomText
-                rounded = $p.rowRounded
-                frame = $p.rowFrame
-                frameColor = $p.frameColor
-                logoPath = $p.rowLogo
-                logoScale = $p.logoScale
-                path = $p.path
-            })
-        }
+        foreach ($p in $sortedPages) { [void]$pagesForNative.Add($p) }
+        
         ExportPdfMultiNative -pages $pagesForNative -path $finalPdfPath -layout $pdfLayout
         Write-Status "[OK] PDF único nativo generado exitosamente en: $finalPdfPath"
     }
@@ -4830,10 +4962,11 @@ function Show-Menu {
 }
 
 # ENTRY POINT
-if ($Help) {
-    Show-Help
-    return
-}
+if ($MyInvocation.InvocationName -ne '.' -and $MyInvocation.InvocationName -ne '&') {
+    if ($Help) {
+        Show-Help
+        return
+    }
 
 if ($Decode -and -not [string]::IsNullOrEmpty($InputPath)) {
     Write-Status "Importando archivo para decodificación: $InputPath"

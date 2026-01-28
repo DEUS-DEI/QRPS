@@ -114,28 +114,66 @@ Ejecuta `run_qrps.bat` para un menú guiado sin necesidad de comandos.
 
 ## ⚙️ Configuración (config.ini)
 
-El archivo `config.ini` centraliza las preferencias globales:
+El archivo `config.ini` permite centralizar las preferencias globales. Los parámetros pasados por línea de comandos (CLI) tienen prioridad sobre este archivo.
 
 | Variable | Descripción | Valor por Defecto |
 | :--- | :--- | :--- |
-| `QRPS_FormatoSalida` | Formatos: `svg, pdf, png` | `pdf` |
-| `QRPS_LogoPath` | Ruta al logo central | (Vacío) |
-| `QRPS_ColorFront` | Color del QR (HEX) | `#000000` |
-| `QRPS_Redondeado` | Redondeado de módulos (0-0.5) | `0` |
-| `QRPS_PdfUnico` | Combinar todo en un solo PDF | `no` |
+| `QRPS_FormatoSalida` | Formatos a generar (pueden ser varios: `svg,pdf,png`) | `pdf` |
+| `QRPS_CarpetaSalida` | Directorio donde se guardarán los archivos | `salida_qr` |
+| `QRPS_ArchivoEntrada` | Nombre del archivo TSV para procesamiento por lotes | `lista_inputs.tsv` |
+| `QRPS_LogoPath` | Ruta absoluta o relativa al logo central | (Vacío) |
+| `QRPS_LogoScale` | Porcentaje de ocupación del logo (1-30) | `20` |
+| `QRPS_ColorFront` | Color principal del código QR (HEX) | `#000000` |
+| `QRPS_ColorFront2` | Segundo color para degradados (HEX) | (Vacío) |
+| `QRPS_TipoDegradado` | Tipo de degradado: `linear` o `radial` | `linear` |
+| `QRPS_ColorBack` | Color de fondo (HEX) | `#ffffff` |
+| `QRPS_Redondeado` | Nivel de redondeo de los módulos (0 a 0.5) | `0` |
+| `QRPS_NivelEC` | Nivel de corrección de errores (`L, M, Q, H`) | `M` |
+| `QRPS_TamanoModulo` | Tamaño en píxeles de cada módulo | `10` |
+| `QRPS_PdfUnico` | Combinar múltiples QRs en un solo archivo PDF (`si/no`) | `no` |
+| `QRPS_PdfUnicoNombre` | Nombre del archivo PDF combinado | `qr_combinado.pdf` |
+| `QRPS_Layout` | Layout para PDF único (`Default, Grid4x4, Grid4x5, Grid6x6`) | `Default` |
+| `QRPS_MenuTimeout` | Tiempo de espera en segundos para el menú de selección | `5` |
 
 ---
 
 ## 📊 Formatos de Datos Soportados
 
-El motor reconoce y valida automáticamente los siguientes formatos:
+El motor reconoce y valida automáticamente los siguientes formatos mediante funciones auxiliares:
 
-- **vCard / MeCard**: Tarjetas de contacto.
-- **WIFI**: Configuración de red (`WIFI:S:SSID;T:WPA;P:PASS;;`).
-- **GS1**: Identificadores de aplicación (GTIN, Lote, Exp.) vía FNC1.
-- **EPC**: Pagos y transferencias bancarias SEPA (BCD 002).
-- **URL / Email / Tel**: Acciones automáticas estándar.
-- **Texto Plano**: Soporte total para UTF-8 y Kanji.
+- **vCard / MeCard**: Generación de tarjetas de contacto completas.
+  ```powershell
+  $vcard = New-vCard -Name "Juan" -Tel "123"
+  $mecard = New-MeCard -Name "Juan" -Tel "123"
+  ```
+- **WIFI**: Configuración rápida de red inalámbrica.
+  ```powershell
+  $wifi = New-WiFiConfig -Ssid "MiRed" -Password "Secret" -Auth "WPA"
+  ```
+- **EPC (SEPA)**: Transferencias bancarias europeas estándar.
+  ```powershell
+  $pago = New-EPC -Beneficiary "IBERDROLA" -IBAN "ES21..." -Amount 45.0
+  ```
+- **GS1**: Soporte para Identificadores de Aplicación (FNC1).
+- **URL / Email / Tel / SMS**: Acciones estándar del sistema.
+- **Texto Plano**: Soporte completo para UTF-8 y Kanji (Shift-JIS).
+
+---
+
+## 🛠️ Utilidades Adicionales
+
+### Conversión de Imágenes a PDF
+Permite tomar una carpeta llena de imágenes (PNG/JPG) y organizarlas automáticamente en un PDF con rejillas de impresión.
+```powershell
+# Disponible vía Menú (Opción 3) o llamando internamente:
+Convert-ImagesToPdf -inputDir ".\fotos" -outputPath "album.pdf" -layout "Grid4x5"
+```
+
+### Structured Append
+Divide datos grandes en hasta 16 códigos QR vinculados.
+```powershell
+.\QRCode.ps1 -Data "Datos muy largos..." -StructuredAppendIndex 0 -StructuredAppendTotal 3 -StructuredAppendParity 123
+```
 
 ---
 

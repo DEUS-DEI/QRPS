@@ -2366,7 +2366,26 @@ function ExportPng {
             
             if ((GetM $m $r $c) -eq 1) {
                 if ($rounded -gt 0) {
-                    $g.FillEllipse($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                    # Normalización de redondeo: Usar rectángulos con bordes redondeados (GraphicsPath)
+                    $radius = [float]($scale * ($rounded / 100))
+                    if ($radius -gt ($scale / 2)) { $radius = $scale / 2 }
+                    
+                    if ($radius -le 0) {
+                        $g.FillRectangle($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                    } else {
+                        $gp = [Drawing.Drawing2D.GraphicsPath]::new()
+                        $rect = [Drawing.RectangleF]::new([float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
+                        $diameter = $radius * 2
+                        
+                        $gp.AddArc($rect.X, $rect.Y, $diameter, $diameter, 180, 90)
+                        $gp.AddArc($rect.Right - $diameter, $rect.Y, $diameter, $diameter, 270, 90)
+                        $gp.AddArc($rect.Right - $diameter, $rect.Bottom - $diameter, $diameter, $diameter, 0, 90)
+                        $gp.AddArc($rect.X, $rect.Bottom - $diameter, $diameter, $diameter, 90, 90)
+                        $gp.CloseFigure()
+                        
+                        $g.FillPath($qrBrush, $gp)
+                        $gp.Dispose()
+                    }
                 } else {
                     $g.FillRectangle($qrBrush, [float]($x + $qrOffX), [float]($y + $qrOffY), [float]$scale, [float]$scale)
                 }
@@ -3446,6 +3465,25 @@ function New-vCard {
     if ($Note) { $vc += "NOTE:$Note`r`n" }
     $vc += "END:VCARD"
     return $vc
+}
+
+function New-MeCard {
+    param(
+        [string]$Name,
+        [string]$Tel,
+        [string]$Email,
+        [string]$Url,
+        [string]$Address
+    )
+    # Formato: MECARD:N:Nombre;TEL:Tel;EMAIL:Email;URL:Url;ADR:Direccion;;
+    $m = "MECARD:"
+    if ($Name) { $m += "N:$Name;" }
+    if ($Tel)  { $m += "TEL:$Tel;" }
+    if ($Email){ $m += "EMAIL:$Email;" }
+    if ($Url)  { $m += "URL:$Url;" }
+    if ($Address){ $m += "ADR:$Address;" }
+    $m += ";"
+    return $m
 }
 
 function New-WiFiConfig {

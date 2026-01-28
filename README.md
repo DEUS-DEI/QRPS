@@ -70,16 +70,17 @@ El motor de exportación PDF de `qrps` es una implementación binaria nativa dis
 | :--- | :--- | :---: | :--- |
 | **ISO 32000-1:2008** | PDF 1.7 | ✅ | Estándar base de la arquitectura del motor. |
 | **ISO 19005-2** | PDF/A-2b (Archivo) | ✅ | Cumplimiento de preservación visual a largo plazo. |
-| **ISO 14289-1** | PDF/UA-1 (Accesibilidad) | ✅ | Estructura lógica (`StructTreeRoot`) y etiquetas de figura. |
+| **ISO 14289-1** | PDF/UA-1 (Accesibilidad) | ✅ | Estructura lógica dinámica (`StructTreeRoot`), etiquetas de figura y mapeo `/Pg`. |
 | **ISO 16684-1** | XMP (Metadatos) | ✅ | Inclusión de esquemas Dublin Core y PDF/A-ID. |
-| **ISO 32000-1 Anexo G** | PDF Linearizado | 🟡 | Estructura presente para "Fast Web View" (optimización básica). |
+| **ISO 32000-1 Anexo G** | PDF Linearizado | 🟡 | Diccionario de linealización (Obj 1) presente para optimización básica. |
 | **ISO 10646** | Unicode (ToUnicode) | ✅ | Mapeo CMap para garantizar extracción de texto correcta. |
 | **ICC.1:2022** | Perfiles de Color sRGB | ✅ | Perfil de color incrustado para consistencia cromática. |
 
 ### 🛠️ Detalles de Implementación (Anexos ISO 32000-1)
 - **Anexo A (Gráficos)**: Soporte completo de operadores de trazado (rect, fill, stroke).
 - **Anexo E (Coordenadas)**: Uso estricto del sistema de coordenadas de usuario PDF.
-- **Anexo K (Tagged PDF)**: Implementación de contenido marcado (`BDC`/`EMC`) y árbol de estructura.
+- **Anexo K (Tagged PDF)**: Implementación de contenido marcado (`BDC`/`EMC`), árbol de estructura dinámico y población automática del array `/K` en `StructTreeRoot`.
+- **Accesibilidad Avanzada**: Vinculación de elementos estructurales con páginas específicas mediante referencias `/Pg` para navegación fluida en lectores de pantalla.
 
 ### ⚠️ Limitaciones y No Implementados (Razones Técnicas)
 | Estándar | Estado | Razón Técnica |
@@ -103,11 +104,9 @@ El motor `qrps` genera archivos PNG y SVG utilizando métodos nativos de .NET y 
 | **ISO/IEC 15948 (PNG)** | ✅ | Estándar principal. Generado vía `System.Drawing.Bitmap`. |
 | **RFC 1950 / 1951 (ZLIB/Deflate)** | ✅ | Utilizado internamente por el motor de compresión de .NET. |
 | **IEC 61966-2-1 (sRGB)** | ✅ | Espacio de color estándar para visualización web. |
-| **ICC.1 (Perfiles de Color)** | 🟡 | Se asume sRGB por defecto; no se incrustan perfiles personalizados. |
+| **ICC.1 (Perfiles de Color)** | 🟡 | Se asume sRGB por defecto; no se incrustan perfiles personalizados para mantener la simplicidad binaria. |
 | **ISO/IEC 10646 (Unicode)** | ✅ | Soporte para renderizado de texto en etiquetas inferiores. |
 | **IANA MIME image/png** | ✅ | Identificación correcta para transporte y servidores web. |
-
-**Limitaciones PNG**: No se implementan formatos animados (APNG) ni multi-imagen (MNG/JNG) por no ser relevantes para códigos QR estáticos.
 
 ### 🎨 Estándares SVG (Scalable Vector Graphics)
 | Estándar / Norma | Estado | Notas Técnicas |
@@ -116,8 +115,17 @@ El motor `qrps` genera archivos PNG y SVG utilizando métodos nativos de .NET y 
 | **W3C XML 1.0 / Namespaces** | ✅ | Generación estricta con declaración de encoding UTF-8. |
 | **W3C CSS (Inline Styles)** | ✅ | Uso de estilos en línea y @import para Google Fonts. |
 | **W3C XLink** | ✅ | Soporte para incrustación de logos PNG en Base64. |
-| **W3C Accessibility (WCAG)** | ✅ | Inclusión de etiquetas `title` y `desc` para lectores de pantalla. |
+| **W3C Accessibility (WCAG)** | ✅ | Inclusión de tags `title`, `desc`, `role="img"` y `aria-labelledby` para máxima accesibilidad (WCAG 2.1). |
 | **MIME image/svg+xml** | ✅ | Registro estándar para entrega web segura. |
+
+### ⚠️ Limitaciones PNG y SVG (Razones Técnicas)
+| Estándar / Característica | Estado | Razón Técnica |
+| :--- | :---: | :--- |
+| **APNG (Animated PNG)** | ❌ | No relevante para códigos QR estáticos; incrementa complejidad innecesariamente. |
+| **MNG/JNG (Multi-image)** | ❌ | Estándares obsoletos o de nicho no soportados por .NET nativo. |
+| **SVG SMIL (Animación)** | ❌ | Las animaciones XML pueden comprometer la legibilidad del código QR por parte de los escáneres. |
+| **SVG Filter Effects (Blur/Shadow)** | ❌ | Se evitan para mantener la nitidez de los bordes (`crispEdges`), crítica para la decodificación. |
+| **ECMAScript (Scripts en SVG)** | ❌ | Excluido por diseño para cumplir con políticas de seguridad (CSP) y evitar falsos positivos de malware. |
 
 ### 🔡 Estándares Tipográficos y Otros
 - **WOFF / WOFF2**: Soportado indirectamente mediante la integración de **Google Fonts** vía CSS `@import`.
@@ -386,9 +394,8 @@ jobs:
 Este motor cumple con el **100% de la suite de estándares ISO/IEC** para códigos de barras 2D, incluyendo generación, decodificación y reporte de calidad profesional.
 
 ### 1. Estándares de Generación y Simbología
-- **ISO/IEC 18004:2024**: Códigos QR (Modelos 1 y 2) y Micro QR (M1, M2, M3, M4). Soporte completo para todos los modos de codificación (Numérico, Alfanumérico, Byte, Kanji).
-- **ISO/IEC 23941:2022**: Rectangular Micro QR (rMQR). Implementación completa de todos los formatos rectangulares.
-- **ISO/IEC 15424**: Identificadores de Portador (AIM IDs) para una identificación profesional del tipo de código (prefijos `]Qn`, `]Mn`).
+- **ISO/IEC 18004:2024**: Códigos QR (Modelos 1 y 2), Micro QR (M1-M4) y **rMQR (Rectangular)**. Soporte completo para todos los modos de codificación (Numérico, Alfanumérico, Byte, Kanji).
+- **ISO/IEC 15424**: Identificadores de Portador (AIM IDs) para una identificación profesional del tipo de código (prefijos `]Qn`, `]Mn`, `]rn`).
 
 ### 2. Estándares de Datos y Sintaxis
 - **ISO/IEC 15418 / GS1**: Soporte para Identificadores de Aplicación (AI) de GS1 mediante FNC1.
@@ -412,4 +419,4 @@ Este motor cumple con el **100% de la suite de estándares ISO/IEC** para códig
 Este proyecto está bajo la **Licencia Apache 2.0**. Esto significa que puedes usarlo, modificarlo y distribuirlo libremente, siempre que mantengas el aviso de copyright y la atribución a los autores originales. Incluye una concesión explícita de derechos de patente.
 
 ---
-*Análisis y cumplimiento actualizado al 25 de enero de 2026 bajo estándares ISO/IEC.*
+*Análisis y cumplimiento actualizado al 27 de enero de 2026 bajo estándares ISO/IEC.*

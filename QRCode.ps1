@@ -3057,6 +3057,8 @@ end
         $cellW = $pW / $cols
         $cellH = $pH / $rows
         
+        $pageStructElemPositions = @()
+        
         $itemIdx = 0
         foreach ($item in $itemsInThisPage) {
             $c = $itemIdx % $cols
@@ -3071,7 +3073,9 @@ end
             $structElemId = $objOffsets.Count
             $structElementIds += $structElemId
             $altText = if ($item.type -eq "Image") { "Image from $($item.path)" } else { "QR Code containing data" }
-            &$WriteStr "<< /Type /StructElem /S /Figure /P $structTreeRootId 0 R /Pg $($actualPageIds.Count + 10) 0 R /Alt ($altText) >>`nendobj`n"
+            &$WriteStr "<< /Type /StructElem /S /Figure /P $structTreeRootId 0 R /Pg "
+            $pageStructElemPositions += $fs.Position
+            &$WriteStr "000 0 R /Alt ($altText) >>`nendobj`n"
 
             if ($item.type -eq "Image") {
                 # ... (Image handling)
@@ -3135,7 +3139,15 @@ end
         &$StartObj
         $pageId = $objOffsets.Count
         $actualPageIds += $pageId
-        &$WriteStr "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $(ToDot $pW) $(ToDot $pH)] /Contents $contId 0 R /Resources $resId 0 R >>`nendobj`n"
+        &$WriteStr "<< /Type /Page /Parent $pagesRootId 0 R /MediaBox [0 0 $(ToDot $pW) $(ToDot $pH)] /Contents $contId 0 R /Resources $resId 0 R >>`nendobj`n"
+
+        # Fix StructElem /Pg references for this page
+        $savedPos = $fs.Position
+        foreach ($pos in $pageStructElemPositions) {
+            $fs.Position = $pos
+            &$WriteStr ("{0:000} 0 R" -f $pageId)
+        }
+        $fs.Position = $savedPos
     }
 
     # Obj 9: StructTreeRoot (ISO 32000-1 / PDF/UA-1)
@@ -3158,7 +3170,7 @@ end
     foreach ($off in $objOffsets) { &$WriteStr ("{0:0000000000} 00000 n `n" -f $off) }
 
     # trailer
-    &$WriteStr "trailer`n<< /Size $($objOffsets.Count + 1) /Root 1 0 R >>`nstartxref`n$xrefPos`n%%EOF"
+    &$WriteStr "trailer`n<< /Size $($objOffsets.Count + 1) /Root $catalogId 0 R >>`nstartxref`n$xrefPos`n%%EOF"
 
     $bw.Close(); $fs.Close()
 }

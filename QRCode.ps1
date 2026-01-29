@@ -226,20 +226,22 @@ function ReadRMQRFormatInfo([hashtable]$m) {
     if ($null -eq $mMod) { Write-Error "ReadRMQRFormatInfo: m['Mod'] is null"; return $null }
 
     # Intentar leer TL (Top-Left)
-    [int[]]$tlBits = @()
-    for([int]$i=0; $i -lt 6; $i++){ $tlBits += [int]$mMod.GetValue($i,7) }
-    for([int]$i=0; $i -lt 6; $i++){ $tlBits += [int]$mMod.GetValue($i,8) }
-    for([int]$i=0; $i -lt 6; $i++){ $tlBits += [int]$mMod.GetValue($i,9) }
+    [int[]]$tlBits = New-Object int[] 18
+    [int]$ptr = 0
+    for([int]$i=0; $i -lt 6; $i++){ $tlBits[$ptr++] = [int]$mMod.GetValue($i,7) }
+    for([int]$i=0; $i -lt 6; $i++){ $tlBits[$ptr++] = [int]$mMod.GetValue($i,8) }
+    for([int]$i=0; $i -lt 6; $i++){ $tlBits[$ptr++] = [int]$mMod.GetValue($i,9) }
     
     # Desenmascarar TL
     [int[]]$tlMask = $script:RMQR_FMT_MASKS['TL']
     for([int]$i=0; $i -lt 18; $i++){ $tlBits[$i] = $tlBits[$i] -bxor $tlMask[$i] }
 
     # Intentar leer BR (Bottom-Right)
-    [int[]]$brBits = @()
-    for([int]$i=0; $i -lt 6; $i++){ $brBits += [int]$mMod.GetValue($h - 6 + $i, $w - 11) }
-    for([int]$i=0; $i -lt 6; $i++){ $brBits += [int]$mMod.GetValue($h - 6 + $i, $w - 10) }
-    for([int]$i=0; $i -lt 6; $i++){ $brBits += [int]$mMod.GetValue($h - 6 + $i, $w - 9) }
+    [int[]]$brBits = New-Object int[] 18
+    $ptr = 0
+    for([int]$i=0; $i -lt 6; $i++){ $brBits[$ptr++] = [int]$mMod.GetValue($h - 6 + $i, $w - 11) }
+    for([int]$i=0; $i -lt 6; $i++){ $brBits[$ptr++] = [int]$mMod.GetValue($h - 6 + $i, $w - 10) }
+    for([int]$i=0; $i -lt 6; $i++){ $brBits[$ptr++] = [int]$mMod.GetValue($h - 6 + $i, $w - 9) }
 
     # Desenmascarar BR
     [int[]]$brMask = $script:RMQR_FMT_MASKS['BR']
@@ -326,7 +328,7 @@ function ExtractBitsRMQR([hashtable]$m) {
     }
     # DEBUG
      Write-Status "ExtractBitsRMQR: Total bits extracted: $($bits.Count)"
-     Write-Status "ExtractBitsRMQR: First 16 bits: $(($bits | select -first 16) -join '')"
+     Write-Status "ExtractBitsRMQR: First 16 bits: $(($bits.GetRange(0, [Math]::Min(16, $bits.Count)) -join ''))"
      return $bits
 }
 
@@ -369,8 +371,8 @@ function DecodeRMQRStream([int[]]$dataBytes, [hashtable]$spec) {
     [System.Collections.Generic.List[int]]$bits = New-Object System.Collections.Generic.List[int]
     foreach ($b in $dataBytes) { for ([int]$i=7;$i -ge 0;$i--){ [void]$bits.Add([int](($b -shr $i) -band 1)) } }
     [int]$idx = 0
-    [string]$resultTxt = ""
-    [array]$segs = @()
+    [System.Text.StringBuilder]$sbResult = New-Object System.Text.StringBuilder
+    [System.Collections.Generic.List[hashtable]]$segs = New-Object System.Collections.Generic.List[hashtable]
     [int]$eciActive = 26
     [hashtable]$cbMap = Get-RMQRCountBitsMap $spec
     
@@ -394,7 +396,7 @@ function DecodeRMQRStream([int[]]$dataBytes, [hashtable]$spec) {
                     $idx += 24
                 }
                 $eciActive = $val
-                $segs += @{Mode='ECI'; Data="$val"}
+                [void]$segs.Add(@{Mode='ECI'; Data="$val"})
                 continue
             }
             break
@@ -422,8 +424,8 @@ function DecodeRMQRStream([int[]]$dataBytes, [hashtable]$spec) {
                 [void]$sbOut.Append($val.ToString("D2"))
             }
             [string]$out = $sbOut.ToString()
-            $resultTxt += $out
-            $segs += @{Mode='N'; Data=$out}
+            [void]$sbResult.Append($out)
+            [void]$segs.Add(@{Mode='N'; Data=$out})
         } elseif ($mode -eq 'A') {
             [System.Text.StringBuilder]$sbOut = [System.Text.StringBuilder]::new()
             for ([int]$i=0;$i -lt $count; $i += 2) {
@@ -438,8 +440,8 @@ function DecodeRMQRStream([int[]]$dataBytes, [hashtable]$spec) {
                 }
             }
             [string]$out = $sbOut.ToString()
-            $resultTxt += $out
-            $segs += @{Mode='A'; Data=$out}
+            [void]$sbResult.Append($out)
+            [void]$segs.Add(@{Mode='A'; Data=$out})
         } elseif ($mode -eq 'B') {
             [byte[]]$bytesOut = New-Object byte[] $count
             for ([int]$i=0;$i -lt $count; $i++) {
@@ -448,8 +450,8 @@ function DecodeRMQRStream([int[]]$dataBytes, [hashtable]$spec) {
             }
             [System.Text.Encoding]$enc = Get-EncodingFromECI $eciActive
             [string]$txt = $enc.GetString($bytesOut)
-            $resultTxt += $txt
-            $segs += @{Mode='B'; Data=$txt}
+            [void]$sbResult.Append($txt)
+            [void]$segs.Add(@{Mode='B'; Data=$txt})
         } elseif ($mode -eq 'K') {
             [System.Text.StringBuilder]$sbOut = [System.Text.StringBuilder]::new()
             for ([int]$i=0;$i -lt $count; $i++) {
@@ -459,11 +461,11 @@ function DecodeRMQRStream([int[]]$dataBytes, [hashtable]$spec) {
                 [void]$sbOut.Append([System.Text.Encoding]::GetEncoding(932).GetString($sjis,0,2))
             }
             [string]$out = $sbOut.ToString()
-            $resultTxt += $out
-            $segs += @{Mode='K'; Data=$out}
+            [void]$sbResult.Append($out)
+            [void]$segs.Add(@{Mode='K'; Data=$out})
         }
     }
-    return @{ Text=$resultTxt; Segments=$segs; ECI=$eciActive }
+    return @{ Text=$sbResult.ToString(); Segments=$segs.ToArray(); ECI=$eciActive }
 }
 
 function InitRMQRMatrix([hashtable]$spec) {
@@ -627,16 +629,17 @@ function Decode-RMQRMatrix([hashtable]$m) {
         }
     }
     
-    $dataBytes = @()
-    $totalErrors = 0
-    for($bix=0; $bix -lt $blocks; $bix++){
+    [System.Collections.Generic.List[int]]$dataBytesList = New-Object System.Collections.Generic.List[int]
+    [int]$totalErrors = 0
+    for([int]$bix=0; $bix -lt $blocks; $bix++){
         $fullBlock = $dataBlocks[$bix] + $ecBlocks[$bix]
-        $res = Decode-ReedSolomon $fullBlock $ecBlocks[$bix].Count
+        $res = Decode-ReedSolomon $fullBlock $ecBlocks[$bix].Length
         if($null -eq $res){ throw "Error RS irreparable en bloque rMQR $bix" }
-        $dataBytes += $res['Data']
-        $totalErrors += $res['Errors']
+        $dataBytesList.AddRange([int[]]$res['Data'])
+        $totalErrors += [int]$res['Errors']
     }
 
+    [int[]]$dataBytes = $dataBytesList.ToArray()
     $dec = DecodeRMQRStream $dataBytes $spec
     $dec['Errors'] = $totalErrors
     return $dec
@@ -772,9 +775,10 @@ function Decode-ReedSolomon($msg, $nsym) {
     # 2. Berlekamp-Massey
     # sigma: [s_L, ..., s_1, 1]
     $sigma = @(1)
-    $b = @(1)
+    [System.Collections.Generic.List[int]]$b = New-Object System.Collections.Generic.List[int]
+    [void]$b.Add(1)
     for ($i = 0; $i -lt $nsym; $i++) {
-        $b = $b + @(0) # b(x) = b(x) * x
+        [void]$b.Add(0) # b(x) = b(x) * x
         $delta = $syn[$i]
         for ($j = 1; $j -lt $sigma.Count; $j++) {
             $delta = $delta -bxor (GFMul $sigma[$sigma.Count - 1 - $j] $syn[$i - $j])
@@ -790,8 +794,8 @@ function Decode-ReedSolomon($msg, $nsym) {
                 
                 # b = oldSigma / delta
                 $invDelta = GFInv $delta
-                $b = @()
-                foreach($c in $sigma){ $b += GFMul $c $invDelta }
+                $b = New-Object System.Collections.Generic.List[int]
+                foreach($c in $sigma){ [void]$b.Add((GFMul $c $invDelta)) }
                 $sigma = $newSigma
             } else {
                 # sigma = sigma + b * delta
@@ -802,11 +806,11 @@ function Decode-ReedSolomon($msg, $nsym) {
     }
 
     # 3. Chien Search
-    $errPos = @()
+    [System.Collections.Generic.List[int]]$errPos = New-Object System.Collections.Generic.List[int]
     for ($i = 0; $i -lt $msg.Count; $i++) {
         $xinv = $script:EXP[255 - $i]
         if ((Poly-Eval-GF $sigma $xinv) -eq 0) {
-            $errPos += $i
+            [void]$errPos.Add($i)
         }
     }
     
@@ -826,10 +830,11 @@ function Decode-ReedSolomon($msg, $nsym) {
         $omega[$omega.Count - 1 - $i] = $val
     }
     
-    $sigmaDeriv = @()
+    [System.Collections.Generic.List[int]]$sigmaDerivList = New-Object System.Collections.Generic.List[int]
     for($i=1; $i -lt $sigma.Count; $i += 2){
-        $sigmaDeriv = @($sigma[$sigma.Count-1-$i]) + $sigmaDeriv
+        [void]$sigmaDerivList.Insert(0, $sigma[$sigma.Count-1-$i])
     }
+    $sigmaDeriv = $sigmaDerivList.ToArray()
 
     $res = [int[]]$msg
     foreach($p in $errPos){
@@ -985,8 +990,9 @@ for ($v = 1; $v -le 40; $v++) {
     if ($v -gt 1) {
         $numAlign = [Math]::Floor($v / 7) + 2
         $step = if ($numAlign -eq 1) { 0 } else { [Math]::Floor(($v * 8 + $numAlign * 3 + 5) / ($numAlign * 4 - 4)) * 2 }
-        $pos = @(); for ($i = 0; $i -lt $numAlign - 1; $i++) { $pos += ($v * 4 + 17 - 7 - $i * $step) }
-        $pos += 6; $script:ALIGN[$v] = $pos | Sort-Object
+        [System.Collections.Generic.List[int]]$pos = New-Object System.Collections.Generic.List[int]
+        for ($i = 0; $i -lt $numAlign - 1; $i++) { [void]$pos.Add(($v * 4 + 17 - 7 - $i * $step)) }
+        [void]$pos.Add(6); $script:ALIGN[$v] = $pos | Sort-Object
     }
     
     foreach ($ec in 'L','M','Q','H') {
@@ -1312,7 +1318,7 @@ function Get-DictionaryCompressedData($txt) {
 }
 
 function Get-Segment([string]$txt) {
-    $segs = @()
+    [System.Collections.Generic.List[hashtable]]$segs = New-Object System.Collections.Generic.List[hashtable]
     $len = $txt.Length
     $i = 0
     
@@ -1346,12 +1352,12 @@ function Get-Segment([string]$txt) {
         if ($segs.Count -gt 0 -and $segs[$segs.Count-1].Mode -eq $mode) {
             $segs[$segs.Count-1].Data += $chunk
         } else {
-            $segs += @{Mode=$mode; Data=$chunk}
+            [void]$segs.Add(@{Mode=$mode; Data=$chunk})
         }
         
         $i += $mLen
     }
-    return $segs
+    return $segs.ToArray()
 }
 
 function Encode([array]$segments, [int]$ver, [string]$ec) {
@@ -1573,13 +1579,13 @@ function ReadFormatInfoMicro([hashtable]$m) {
     # 15 bits around finder pattern
     # (8,0)..(8,7) and (0,8)..(7,8) - Actually standard says:
     # (8,1)..(8,8) and (1,8)..(7,8)
-    [string]$bits = ""
+    [int]$valBits = 0
     [int[,]]$mMod = $m.Mod
-    for ([int]$i=1;$i -le 8;$i++){ $bits += $mMod.GetValue(8,$i) }
-    for ([int]$i=7;$i -ge 1;$i--){ $bits += $mMod.GetValue($i,8) }
+    for ([int]$i=1;$i -le 8;$i++){ $valBits = ($valBits -shl 1) -bor [int]$mMod.GetValue(8,$i) }
+    for ([int]$i=7;$i -ge 1;$i--){ $valBits = ($valBits -shl 1) -bor [int]$mMod.GetValue($i,8) }
     
     [int]$mask = 0x4445
-    [int]$val = [Convert]::ToInt32($bits, 2) -bxor $mask
+    [int]$val = $valBits -bxor $mask
     
     [int]$data = $val -shr 10
     [int]$vBits = ($data -shr 3) -band 0x03
@@ -1625,8 +1631,8 @@ function DecodeMicroQRStream($bytes, $ver) {
     [System.Collections.Generic.List[int]]$bits = New-Object "System.Collections.Generic.List[int]"
     foreach ($b in $bytes) { for ([int]$i=7;$i -ge 0;$i--){ [void]$bits.Add([int](([int]$b -shr $i) -band 1)) } }
     [int]$idx = 0
-    [string]$resultTxt = ""
-    $segs = @()
+    [System.Text.StringBuilder]$sbResult = New-Object System.Text.StringBuilder
+    [System.Collections.Generic.List[hashtable]]$segs = New-Object System.Collections.Generic.List[hashtable]
     
     while ($idx -lt $bits.Count) {
         [string]$mode = ""
@@ -1653,7 +1659,7 @@ function DecodeMicroQRStream($bytes, $ver) {
         $idx += $cb
         
         if ($mode -eq 'N') {
-            $sbOut = [System.Text.StringBuilder]::new()
+            [System.Text.StringBuilder]$sbOut = [System.Text.StringBuilder]::new()
             [int]$rem = $count % 3; [int]$full = $count - $rem
             for ([int]$i=0;$i -lt $full; $i += 3) {
                 [int]$val = 0; for ([int]$b=0;$b -lt 10;$b++){ $val = ($val -shl 1) -bor $bits[$idx+$b] }; $idx += 10
@@ -1667,10 +1673,10 @@ function DecodeMicroQRStream($bytes, $ver) {
                 [void]$sbOut.Append($val.ToString("D2"))
             }
             [string]$out = $sbOut.ToString()
-            $resultTxt += $out
-            $segs += @{Mode='N'; Data=$out}
+            [void]$sbResult.Append($out)
+            [void]$segs.Add(@{Mode='N'; Data=$out})
         } elseif ($mode -eq 'A') {
-            $sbOut = [System.Text.StringBuilder]::new()
+            [System.Text.StringBuilder]$sbOut = [System.Text.StringBuilder]::new()
             for ([int]$i=0;$i -lt $count; $i += 2) {
                 if ($i + 1 -lt $count) {
                     [int]$val = 0; for ([int]$b=0;$b -lt 11;$b++){ $val = ($val -shl 1) -bor $bits[$idx+$b] }; $idx += 11
@@ -1683,8 +1689,8 @@ function DecodeMicroQRStream($bytes, $ver) {
                 }
             }
             [string]$out = $sbOut.ToString()
-            $resultTxt += $out
-            $segs += @{Mode='A'; Data=$out}
+            [void]$sbResult.Append($out)
+            [void]$segs.Add(@{Mode='A'; Data=$out})
         } elseif ($mode -eq 'B') {
             [byte[]]$bytesOut = New-Object byte[] $count
             for ([int]$i=0;$i -lt $count; $i++) {
@@ -1692,11 +1698,11 @@ function DecodeMicroQRStream($bytes, $ver) {
                 $bytesOut[$i] = [byte]$val
             }
             [string]$txt = [System.Text.Encoding]::UTF8.GetString($bytesOut)
-            $resultTxt += $txt
-            $segs += @{Mode='B'; Data=$txt}
+            [void]$sbResult.Append($txt)
+            [void]$segs.Add(@{Mode='B'; Data=$txt})
         }
     }
-    return @{ Text=$resultTxt; Segments=$segs }
+    return @{ Text=$sbResult.ToString(); Segments=$segs }
 }
 
 function Decode-MicroQRMatrix($m) {
@@ -1710,13 +1716,13 @@ function Decode-MicroQRMatrix($m) {
     $um = ApplyMask $m $fi.Mask
     
     $bits = ExtractBitsMicro $um
-    $allBytes = @()
-    for ($i=0;$i -lt $bits.Count; $i += 8) {
-        $byte = 0
-        for ($j=0;$j -lt 8; $j++) { 
+    [System.Collections.Generic.List[int]]$allBytes = New-Object System.Collections.Generic.List[int]
+    for ([int]$i=0;$i -lt $bits.Count; $i += 8) {
+        [int]$byte = 0
+        for ([int]$j=0;$j -lt 8; $j++) { 
             if ($i + $j -lt $bits.Count) { $byte = ($byte -shl 1) -bor $bits[$i+$j] }
         }
-        $allBytes += $byte
+        [void]$allBytes.Add($byte)
     }
     
     # EC correction
@@ -1791,46 +1797,49 @@ function GetEC([int[]]$data, [int]$ecn) {
 function BuildCW([int[]]$data, [int]$ver, [string]$ec) {
     $spec = $script:SPEC["$ver$ec"]
     $ecIdx = switch($ec){'L'{1}'M'{2}'Q'{3}'H'{4}}
-    $ecn = [int]$script:ECC_PER_BLOCK[$ver][$ecIdx]
+    [int]$ecn = [int]$script:ECC_PER_BLOCK[$ver][$ecIdx]
     
     # 1. Split data codewords into blocks
-    $blocks = @()
-    $offset = 0
+    [System.Collections.Generic.List[int[]]]$blocks = New-Object System.Collections.Generic.List[int[]]
+    [int]$offset = 0
     # Group 1
-    for ($i = 0; $i -lt $spec.G1; $i++) {
-        $blocks += ,($data[$offset..($offset + $spec.D1 - 1)])
+    for ([int]$i = 0; $i -lt $spec.G1; $i++) {
+        [void]$blocks.Add($data[$offset..($offset + $spec.D1 - 1)])
         $offset += $spec.D1
     }
     # Group 2
-    for ($i = 0; $i -lt $spec.G2; $i++) {
-        $blocks += ,($data[$offset..($offset + $spec.D2 - 1)])
+    for ([int]$i = 0; $i -lt $spec.G2; $i++) {
+        [void]$blocks.Add($data[$offset..($offset + $spec.D2 - 1)])
         $offset += $spec.D2
     }
     
     # 2. Calculate EC per block
-    $ecBlocks = @()
+    [System.Collections.Generic.List[int[]]]$ecBlocks = New-Object System.Collections.Generic.List[int[]]
     foreach ($b in $blocks) {
-        $ecBlocks += ,(GetEC $b $ecn)
+        [void]$ecBlocks.Add((GetEC $b $ecn))
     }
     
     # 3. Interleave Data
-    $interleavedData = @()
-    $maxD = if ($spec.G2 -gt 0) { $spec.D2 } else { $spec.D1 }
-    for ($i = 0; $i -lt $maxD; $i++) {
+    [System.Collections.Generic.List[int]]$interleavedData = New-Object System.Collections.Generic.List[int]
+    [int]$maxD = if ($spec.G2 -gt 0) { $spec.D2 } else { $spec.D1 }
+    for ([int]$i = 0; $i -lt $maxD; $i++) {
         foreach ($b in $blocks) {
-            if ($i -lt $b.Count) { $interleavedData += $b[$i] }
+            if ($i -lt $b.Length) { [void]$interleavedData.Add($b[$i]) }
         }
     }
     
     # 4. Interleave EC
-    $interleavedEC = @()
-    for ($i = 0; $i -lt $ecn; $i++) {
+    [System.Collections.Generic.List[int]]$interleavedEC = New-Object System.Collections.Generic.List[int]
+    for ([int]$i = 0; $i -lt $ecn; $i++) {
         foreach ($eb in $ecBlocks) {
-            $interleavedEC += $eb[$i]
+            [void]$interleavedEC.Add($eb[$i])
         }
     }
     
-    return $interleavedData + $interleavedEC
+    [int[]]$res = New-Object int[] ($interleavedData.Count + $interleavedEC.Count)
+    $interleavedData.CopyTo($res, 0)
+    $interleavedEC.CopyTo($res, $interleavedData.Count)
+    return $res
 }
 
 function GetSize([int]$v) { return 17 + $v * 4 }
@@ -2179,8 +2188,8 @@ function DecodeQRStream([byte[]]$bytes, [int]$ver) {
     [System.Collections.Generic.List[int]]$bits = New-Object System.Collections.Generic.List[int]
     foreach ($b in $bytes) { for ([int]$i=7;$i -ge 0;$i--){ $bits.Add([int](($b -shr $i) -band 1)) } }
     [int]$idx = 0
-    [string]$resultTxt = ""
-    [array]$segs = @()
+    [System.Text.StringBuilder]$sbResult = New-Object System.Text.StringBuilder
+    [System.Collections.Generic.List[hashtable]]$segs = New-Object System.Collections.Generic.List[hashtable]
     [int]$eciActive = 26
     while ($idx + 4 -le $bits.Count) {
         [int]$mi = ($bits[$idx] -shl 3) -bor ($bits[$idx+1] -shl 2) -bor ($bits[$idx+2] -shl 1) -bor $bits[$idx+3]
@@ -2192,7 +2201,7 @@ function DecodeQRStream([byte[]]$bytes, [int]$ver) {
                 for ([int]$i=0;$i -lt 8;$i++){ $val = ($val -shl 1) -bor $bits[$idx+$i] }
                 $idx += 8
                 $eciActive = $val
-                $segs += @{Mode='ECI'; Data="$val"}
+                [void]$segs.Add(@{Mode='ECI'; Data="$val"})
                 continue
             }
             break
@@ -2204,17 +2213,17 @@ function DecodeQRStream([byte[]]$bytes, [int]$ver) {
                 for ([int]$i=0;$i -lt 4;$i++){ $totVal = ($totVal -shl 1) -bor $bits[$idx+4+$i] }
                 for ([int]$i=0;$i -lt 8;$i++){ $parVal = ($parVal -shl 1) -bor $bits[$idx+8+$i] }
                 $idx += 16
-                $segs += @{Mode='SA'; Index=$idxVal; Total=($totVal+1); Parity=$parVal}
+                [void]$segs.Add(@{Mode='SA'; Index=$idxVal; Total=($totVal+1); Parity=$parVal})
                 continue
             }
             break
         }
-        if ($mi -eq 5) { $segs += @{Mode='F1'}; continue }
+        if ($mi -eq 5) { [void]$segs.Add(@{Mode='F1'}); continue }
         if ($mi -eq 9) {
             if ($idx + 8 -le $bits.Count) {
                 [int]$app = 0; for ([int]$i=0;$i -lt 8;$i++){ $app = ($app -shl 1) -bor $bits[$idx+$i] }
                 $idx += 8
-                $segs += @{Mode='F2'; AppIndicator=$app}
+                [void]$segs.Add(@{Mode='F2'; AppIndicator=$app})
                 continue
             }
             break
@@ -2248,8 +2257,8 @@ function DecodeQRStream([byte[]]$bytes, [int]$ver) {
                 [void]$sbOut.Append($val.ToString("D2"))
             }
             [string]$out = $sbOut.ToString()
-            $resultTxt += $out
-            $segs += @{Mode='N'; Data=$out}
+            [void]$sbResult.Append($out)
+            [void]$segs.Add(@{Mode='N'; Data=$out})
         } elseif ($mode -eq 'A') {
             [System.Text.StringBuilder]$sbOut = [System.Text.StringBuilder]::new()
             for ([int]$i=0;$i -lt $count; $i += 2) {
@@ -2264,8 +2273,8 @@ function DecodeQRStream([byte[]]$bytes, [int]$ver) {
                 }
             }
             [string]$out = $sbOut.ToString()
-            $resultTxt += $out
-            $segs += @{Mode='A'; Data=$out}
+            [void]$sbResult.Append($out)
+            [void]$segs.Add(@{Mode='A'; Data=$out})
         } elseif ($mode -eq 'B') {
             [byte[]]$bytesOut = New-Object byte[] $count
             for ([int]$i=0;$i -lt $count; $i++) {
@@ -2275,8 +2284,8 @@ function DecodeQRStream([byte[]]$bytes, [int]$ver) {
             }
             [System.Text.Encoding]$enc = Get-EncodingFromECI $eciActive
             [string]$txt = $enc.GetString($bytesOut)
-            $resultTxt += $txt
-            $segs += @{Mode='B'; Data=$txt}
+            [void]$sbResult.Append($txt)
+            [void]$segs.Add(@{Mode='B'; Data=$txt})
         } elseif ($mode -eq 'K') {
             [System.Text.StringBuilder]$sbOut = [System.Text.StringBuilder]::new()
             for ([int]$i=0;$i -lt $count; $i++) {
@@ -2287,11 +2296,11 @@ function DecodeQRStream([byte[]]$bytes, [int]$ver) {
                 [void]$sbOut.Append([System.Text.Encoding]::GetEncoding(932).GetString($sjis,0,2))
             }
             [string]$out = $sbOut.ToString()
-            $resultTxt += $out
-            $segs += @{Mode='K'; Data=$out}
+            [void]$sbResult.Append($out)
+            [void]$segs.Add(@{Mode='K'; Data=$out})
         }
     }
-    return @{ Text=$resultTxt; Segments=$segs; ECI=$eciActive }
+    return @{ Text=$sbResult.ToString(); Segments=$segs; ECI=$eciActive }
 }
 
 function Decode-QRCodeMatrix($m) {
@@ -2306,11 +2315,11 @@ function Decode-QRCodeMatrix($m) {
     $bits = ExtractBitsQR $um
     $spec = $script:SPEC["$ver$($fi.EC)"]
     
-    $allBytes = @()
-    for ($i=0;$i -lt $bits.Count; $i += 8) {
-        $byte = 0
-        for ($j=0;$j -lt 8; $j++) { $byte = ($byte -shl 1) -bor $bits[$i+$j] }
-        $allBytes += $byte
+    [System.Collections.Generic.List[int]]$allBytes = New-Object System.Collections.Generic.List[int]
+    for ([int]$i=0;$i -lt $bits.Count; $i += 8) {
+        [int]$byte = 0
+        for ([int]$j=0;$j -lt 8; $j++) { $byte = ($byte -shl 1) -bor $bits[$i+$j] }
+        [void]$allBytes.Add($byte)
     }
 
     # Desentrelazado y corrección Reed-Solomon
@@ -2321,10 +2330,10 @@ function Decode-QRCodeMatrix($m) {
     $g1 = $spec.G1; $d1 = $spec.D1
     $g2 = $spec.G2; $d2 = $spec.D2
     
-    $blocks = @()
+    [System.Collections.Generic.List[int[]]]$blocks = New-Object System.Collections.Generic.List[int[]]
     for($i=0; $i -lt $numBlocks; $i++){
         $dataLen = if($i -lt $g1){$d1}else{$d2}
-        $blocks += ,(@(0) * ($dataLen + $ecPerBlock))
+        [void]$blocks.Add((New-Object int[] ($dataLen + $ecPerBlock)))
     }
 
     $ptr = 0
@@ -2346,12 +2355,12 @@ function Decode-QRCodeMatrix($m) {
     }
 
     # 3. Corregir cada bloque
-    $dataBytes = @()
+    [System.Collections.Generic.List[int]]$dataBytes = New-Object System.Collections.Generic.List[int]
     $totalErrors = 0
     foreach($b in $blocks){
         $res = Decode-ReedSolomon $b $ecPerBlock
         if($null -eq $res){ throw "Error de corrección Reed-Solomon irreparable" }
-        $dataBytes += $res.Data
+        [void]$dataBytes.AddRange($res.Data)
         $totalErrors += $res.Errors
     }
 
@@ -3075,15 +3084,15 @@ function ExportSvg {
                         [void]$sb.Append("<path d=""M $(ToDot ($x + 0.5)) $(ToDot $y) L $(ToDot ($x + 1)) $(ToDot ($y + 0.5)) L $(ToDot ($x + 0.5)) $(ToDot ($y + 1)) L $(ToDot $x) $(ToDot ($y + 0.5)) Z""/>")
                     }
                     'star' {
-                        $points = ""
+                        [System.Text.StringBuilder]$sbPoints = [System.Text.StringBuilder]::new()
                         for ($i = 0; $i -lt 10; $i++) {
                             $angle = [Math]::PI * ($i * 36 - 90) / 180
                             $rad = if ($i % 2 -eq 0) { 0.5 } else { 0.2 }
                             $px = $x + 0.5 + $rad * [Math]::Cos($angle)
                             $py = $y + 0.5 + $rad * [Math]::Sin($angle)
-                            $points += "$(ToDot $px),$(ToDot $py) "
+                            [void]$sbPoints.Append("$(ToDot $px),$(ToDot $py) ")
                         }
-                        [void]$sb.Append("<polygon points=""$($points.Trim())""/>")
+                        [void]$sb.Append("<polygon points=""$($sbPoints.ToString().Trim())""/>")
                     }
                     'rounded' {
                         $rad = $rounded / 100
@@ -3389,80 +3398,80 @@ end
     &$StartObj # Obj 8: ToUnicode CMap
     &$WriteStr "<< /Length $($toUnicodeCMap.Length) >>`nstream`n$toUnicodeCMap`nendstream`nendobj`n"
 
-    $actualPageIds = @()
-    $structElementIds = @()
-    $imageObjects = @{} # Path -> @{ id, w, h }
+        $actualPageIds = New-Object System.Collections.Generic.List[int]
+        $structElementIds = New-Object System.Collections.Generic.List[int]
+        $imageObjects = @{} # Path -> @{ id, w, h }
 
-    for ($pIdx = 0; $pIdx -lt $totalPages; $pIdx++) {
-        # ... (rest of the loop remains similar but with marked content)
-        $itemsInThisPage = if ($isGrid) {
-            $start = $pIdx * $itemsPerPage
-            $end = [Math]::Min($start + $itemsPerPage, $totalItems)
-            $pages[$start..($end-1)]
-        } else {
-            @($pages[$pIdx])
-        }
-
-        $pW = if ($isGrid) { $pageW } else { 
-            $item = $itemsInThisPage[0]
-            $baseW = if ($null -ne $item.m.Width) { $item.m.Width } else { $item.m.Size }
-            $frameSize = if ($item.frame) { 4 } else { 0 }
-            ($baseW + ($item.quiet * 2) + ($frameSize * 2)) * $item.scale
-        }
-        $pH = if ($isGrid) { $pageH } else {
-            $item = $itemsInThisPage[0]
-            $baseH = if ($null -ne $item.m.Height) { $item.m.Height } else { $item.m.Size }
-            $frameSize = if ($item.frame) { 4 } else { 0 }
-            $allLines = @()
-            if ($item.text.Count -gt 0) {
-                foreach ($txt in $item.text) { if ($txt) { foreach ($sl in ($txt -split "\\n")) { if ($sl) { $allLines += $sl } } } }
-            }
-            $textHeight = if ($allLines.Count -gt 0) { ($allLines.Count * 3) + 1 } else { 0 }
-            ($baseH + ($item.quiet * 2) + ($frameSize * 2) + $textHeight) * $item.scale
-        }
-
-        # Content Object (Buffer in memory)
-        $contentSb = New-Object System.Text.StringBuilder
-        $xObjects = @{} # Name -> Id
-
-        $cellW = $pW / $cols
-        $cellH = $pH / $rows
-        
-        $pageStructElemPositions = @()
-        
-        $itemIdx = 0
-        foreach ($item in $itemsInThisPage) {
-            # Optimización E-Ink: Asegurar alto contraste y colores puros
-            if ($item.eink) {
-                $item.fg = "#000000"
-                $item.fg2 = ""
-                $item.bg = "#ffffff"
-                $item.frameColor = "#000000"
-                $item.moduleShape = "default" # Forzar módulos cuadrados para máxima nitidez
+        for ($pIdx = 0; $pIdx -lt $totalPages; $pIdx++) {
+            # ... (rest of the loop remains similar but with marked content)
+            $itemsInThisPage = if ($isGrid) {
+                $start = $pIdx * $itemsPerPage
+                $end = [Math]::Min($start + $itemsPerPage, $totalItems)
+                $pages[$start..($end-1)]
+            } else {
+                @($pages[$pIdx])
             }
 
-            $c = $itemIdx % $cols
-            $r = [Math]::Floor($itemIdx / $cols)
-            $itemIdx++
+            $pW = if ($isGrid) { $pageW } else { 
+                $item = $itemsInThisPage[0]
+                $baseW = if ($null -ne $item.m.Width) { $item.m.Width } else { $item.m.Size }
+                $frameSize = if ($item.frame) { 4 } else { 0 }
+                ($baseW + ($item.quiet * 2) + ($frameSize * 2)) * $item.scale
+            }
+            $pH = if ($isGrid) { $pageH } else {
+                $item = $itemsInThisPage[0]
+                $baseH = if ($null -ne $item.m.Height) { $item.m.Height } else { $item.m.Size }
+                $frameSize = if ($item.frame) { 4 } else { 0 }
+                [System.Collections.Generic.List[string]]$allLines = New-Object System.Collections.Generic.List[string]
+                if ($item.text.Count -gt 0) {
+                    foreach ($txt in $item.text) { if ($txt) { foreach ($sl in ($txt -split "\\n")) { if ($sl) { [void]$allLines.Add($sl) } } } }
+                }
+                $textHeight = if ($allLines.Count -gt 0) { ($allLines.Count * 3) + 1 } else { 0 }
+                ($baseH + ($item.quiet * 2) + ($frameSize * 2) + $textHeight) * $item.scale
+            }
+
+            # Content Object (Buffer in memory)
+            $contentSb = New-Object System.Text.StringBuilder
+            $xObjects = @{} # Name -> Id
+
+            $cellW = $pW / $cols
+            $cellH = $pH / $rows
             
-            $offsetX = $c * $cellW
-            $offsetY = $pH - (($r + 1) * $cellH)
+            [System.Collections.Generic.List[long]]$pageStructElemPositions = New-Object System.Collections.Generic.List[long]
+            
+            $itemIdx = 0
+            foreach ($item in $itemsInThisPage) {
+                # Optimización E-Ink: Asegurar alto contraste y colores puros
+                if ($item.eink) {
+                    $item.fg = "#000000"
+                    $item.fg2 = ""
+                    $item.bg = "#ffffff"
+                    $item.frameColor = "#000000"
+                    $item.moduleShape = "default" # Forzar módulos cuadrados para máxima nitidez
+                }
 
-            # Dibujar fondo de la celda si es necesario
-            if ($item.bg -and $item.bg -ne "transparent" -and $item.bg -ne "#ffffff") {
-                $bgPdf = &$ToPdfColor $item.bg
-                [void]$contentSb.AppendLine("$bgPdf rg")
-                [void]$contentSb.AppendLine("$(ToDot $offsetX) $(ToDot $offsetY) $(ToDot $cellW) $(ToDot $cellH) re f")
-            }
+                $c = $itemIdx % $cols
+                $r = [Math]::Floor($itemIdx / $cols)
+                $itemIdx++
+                
+                $offsetX = $c * $cellW
+                $offsetY = $pH - (($r + 1) * $cellH)
 
-            # Create Structure Element (Accessibility)
-            &$StartObj
-            $structElemId = $objOffsets.Count
-            $structElementIds += $structElemId
-            $altText = if ($item.type -eq "Image") { "Image from $($item.path)" } else { "QR Code containing data" }
-            &$WriteStr "<< /Type /StructElem /S /Figure /P $structTreeRootId 0 R /Pg "
-            $pageStructElemPositions += $fs.Position
-            &$WriteStr "000 0 R /Alt ($altText) >>`nendobj`n"
+                # Dibujar fondo de la celda si es necesario
+                if ($item.bg -and $item.bg -ne "transparent" -and $item.bg -ne "#ffffff") {
+                    $bgPdf = &$ToPdfColor $item.bg
+                    [void]$contentSb.AppendLine("$bgPdf rg")
+                    [void]$contentSb.AppendLine("$(ToDot $offsetX) $(ToDot $offsetY) $(ToDot $cellW) $(ToDot $cellH) re f")
+                }
+
+                # Create Structure Element (Accessibility)
+                &$StartObj
+                $structElemId = $objOffsets.Count
+                [void]$structElementIds.Add($structElemId)
+                $altText = if ($item.type -eq "Image") { "Image from $($item.path)" } else { "QR Code containing data" }
+                &$WriteStr "<< /Type /StructElem /S /Figure /P $structTreeRootId 0 R /Pg "
+                [void]$pageStructElemPositions.Add($fs.Position)
+                &$WriteStr "000 0 R /Alt ($altText) >>`nendobj`n"
 
             if ($item.type -eq "Image") {
                 # ... (Image handling)
@@ -3498,9 +3507,9 @@ end
                 $baseH = if ($null -ne $m.Height) { $m.Height } else { $m.Size }
                 
                 # Calcular líneas de texto para el offset Y
-                $allLines = @()
+                [System.Collections.Generic.List[string]]$allLines = New-Object System.Collections.Generic.List[string]
                 if ($item.text.Count -gt 0) {
-                    foreach ($txt in $item.text) { if ($txt) { foreach ($sl in ($txt -split "\n")) { if ($sl) { $allLines += $sl } } } }
+                    foreach ($txt in $item.text) { if ($txt) { foreach ($sl in ($txt -split "\n")) { if ($sl) { [void]$allLines.Add($sl) } } } }
                 }
                 $textHeight = if ($allLines.Count -gt 0) { ($allLines.Count * 3) + 1 } else { 0 }
 
@@ -3635,7 +3644,7 @@ end
         # 3. Page Object (Write it now, sequentially)
         &$StartObj
         $pageId = $objOffsets.Count
-        $actualPageIds += $pageId
+        [void]$actualPageIds.Add($pageId)
         &$WriteStr "<< /Type /Page /Parent $pagesRootId 0 R /MediaBox [0 0 $(ToDot $pW) $(ToDot $pH)] /Contents $contId 0 R /Resources $resId 0 R >>`nendobj`n"
 
         # Fix StructElem /Pg references for this page
@@ -3839,15 +3848,15 @@ function ExportSvgRect {
                     'circle' { [void]$sb.Append("<circle cx=""$(ToDot ($x + 0.5))"" cy=""$(ToDot ($y + 0.5))"" r=""0.5""/>") }
                     'diamond' { [void]$sb.Append("<path d=""M $(ToDot ($x + 0.5)) $(ToDot $y) L $(ToDot ($x + 1)) $(ToDot ($y + 0.5)) L $(ToDot ($x + 0.5)) $(ToDot ($y + 1)) L $(ToDot $x) $(ToDot ($y + 0.5)) Z""/>") }
                     'star' {
-                        $points = ""
+                        [System.Text.StringBuilder]$sbPoints = [System.Text.StringBuilder]::new()
                         for ($i = 0; $i -lt 10; $i++) {
                             $angle = [Math]::PI * ($i * 36 - 90) / 180
                             $rad = if ($i % 2 -eq 0) { 0.5 } else { 0.2 }
                             $px = $x + 0.5 + $rad * [Math]::Cos($angle)
                             $py = $y + 0.5 + $rad * [Math]::Sin($angle)
-                            $points += "$(ToDot $px),$(ToDot $py) "
+                            [void]$sbPoints.Append("$(ToDot $px),$(ToDot $py) ")
                         }
-                        [void]$sb.Append("<polygon points=""$($points.Trim())""/>")
+                        [void]$sb.Append("<polygon points=""$($sbPoints.ToString().Trim())""/>")
                     }
                     'rounded' {
                         $rad = $rounded / 100
@@ -3926,11 +3935,16 @@ function ShowConsoleRect {
     Write-Output "  $border"
     [int[,]]$mMod = $m.Mod
     for ([int]$r = 0; $r -lt $m.Height; $r++) {
-        $line = "  " + [char]0x2588 + [char]0x2588
+        [System.Text.StringBuilder]$sbLine = New-Object System.Text.StringBuilder
+        [void]$sbLine.Append("  ")
+        [void]$sbLine.Append([char]0x2588)
+        [void]$sbLine.Append([char]0x2588)
         for ([int]$c = 0; $c -lt $m.Width; $c++) {
-            $line += if ([int]$mMod.GetValue($r, $c) -eq 1) { "  " } else { [string]::new([char]0x2588, 2) }
+            [void]$sbLine.Append($(if ([int]$mMod.GetValue($r, $c) -eq 1) { "  " } else { [string]::new([char]0x2588, 2) }))
         }
-        Write-Output "$line$([char]0x2588)$([char]0x2588)"
+        [void]$sbLine.Append([char]0x2588)
+        [void]$sbLine.Append([char]0x2588)
+        Write-Output $sbLine.ToString()
     }
     Write-Output "  $border"
     Write-Output ""
@@ -3942,11 +3956,16 @@ function ShowConsole($m) {
     Write-Output "  $border"
     
     for ($r = 0; $r -lt $m.Size; $r++) {
-        $line = "  " + [char]0x2588 + [char]0x2588
+        [System.Text.StringBuilder]$sbLine = New-Object System.Text.StringBuilder
+        [void]$sbLine.Append("  ")
+        [void]$sbLine.Append([char]0x2588)
+        [void]$sbLine.Append([char]0x2588)
         for ($c = 0; $c -lt $m.Size; $c++) {
-            $line += if ((GetM $m $r $c) -eq 1) { "  " } else { [string]::new([char]0x2588, 2) }
+            [void]$sbLine.Append($(if ((GetM $m $r $c) -eq 1) { "  " } else { [string]::new([char]0x2588, 2) }))
         }
-        Write-Output "$line$([char]0x2588)$([char]0x2588)"
+        [void]$sbLine.Append([char]0x2588)
+        [void]$sbLine.Append([char]0x2588)
+        Write-Output $sbLine.ToString()
     }
     
     Write-Output "  $border"
@@ -4096,10 +4115,10 @@ function New-CryptoAddress {
         [string]$Message = ""
     )
     $uri = "${Coin}:$Address"
-    $params = @()
-    if ($Amount -gt 0) { $params += "amount=$Amount" }
-    if ($Label) { $params += "label=$([uri]::EscapeDataString($Label))" }
-    if ($Message) { $params += "message=$([uri]::EscapeDataString($Message))" }
+    [System.Collections.Generic.List[string]]$params = New-Object System.Collections.Generic.List[string]
+    if ($Amount -gt 0) { [void]$params.Add("amount=$Amount") }
+    if ($Label) { [void]$params.Add("label=$([uri]::EscapeDataString($Label))") }
+    if ($Message) { [void]$params.Add("message=$([uri]::EscapeDataString($Message))") }
     
     if ($params.Count -gt 0) {
         $uri += "?" + ($params -join "&")
@@ -4306,23 +4325,23 @@ function New-QRCode {
             $MicroVersion = $selMv
             $Symbol = 'Micro'
         } else {
-            $qrSegments = @()
+            [System.Collections.Generic.List[hashtable]]$qrSegments = New-Object System.Collections.Generic.List[hashtable]
             $useSAauto = ($StructuredAppendTotal -gt 0 -or $StructuredAppendIndex -ge 0 -or $StructuredAppendParity -ge 0)
             if ($useSAauto) {
                 $paritySourceAuto = if ([string]::IsNullOrEmpty($StructuredAppendParityData)) { $Data } else { $StructuredAppendParityData }
                 $parityAuto = if ($StructuredAppendParity -ge 0) { $StructuredAppendParity } else { Get-StructuredAppendParity $paritySourceAuto }
-                $qrSegments += @{Mode='SA'; Index=$StructuredAppendIndex; Total=$StructuredAppendTotal; Parity=$parityAuto}
+                [void]$qrSegments.Add(@{Mode='SA'; Index=$StructuredAppendIndex; Total=$StructuredAppendTotal; Parity=$parityAuto})
             }
-            if ($Fnc1First) { $qrSegments += @{Mode='F1'} }
-            elseif ($Fnc1Second) { $qrSegments += @{Mode='F2'; AppIndicator=$Fnc1ApplicationIndicator} }
+            if ($Fnc1First) { [void]$qrSegments.Add(@{Mode='F1'}) }
+            elseif ($Fnc1Second) { [void]$qrSegments.Add(@{Mode='F2'; AppIndicator=$Fnc1ApplicationIndicator}) }
             if ($EciValue -gt 0) {
-                $qrSegments += @{Mode='ECI'; Data="$EciValue"}
+                [void]$qrSegments.Add(@{Mode='ECI'; Data="$EciValue"})
             } else {
                 $tmpSegs = Get-Segment $Data
                 $needsUtf8Auto = $false
                 foreach ($segA in $tmpSegs) { if ($segA.Mode -eq 'B' -and $segA.Data -match '[^ -~]') { $needsUtf8Auto = $true; break } }
-                if ($needsUtf8Auto) { $qrSegments += @{Mode='ECI'; Data="26"} }
-                $qrSegments += $tmpSegs
+                if ($needsUtf8Auto) { [void]$qrSegments.Add(@{Mode='ECI'; Data="26"}) }
+                $qrSegments.AddRange($tmpSegs)
             }
             $qrMinVer = 0
             $maxVerAuto = if ($Model -eq 'M1') { 14 } else { 40 }
@@ -4450,14 +4469,14 @@ function New-QRCode {
             $pb = $pads[$pi]; $pi = 1 - $pi
             for ($b = 7; $b -ge 0; $b--) { [void]$bits.Add([int](($pb -shr $b) -band 1)) }
         }
-        $dataCW = @()
+        [System.Collections.Generic.List[int]]$dataCW = New-Object System.Collections.Generic.List[int]
         for ($i = 0; $i -lt $bits.Count; $i += 8) {
             $byte = 0
             for ($j = 0; $j -lt 8; $j++) { $byte = ($byte -shl 1) -bor $bits[$i + $j] }
-            $dataCW += $byte
+            [void]$dataCW.Add($byte)
         }
-        $ecCW = if ($eccLen -gt 0) { GetEC $dataCW $eccLen } else { @() }
-        $allCW = $dataCW + $ecCW
+        $ecCW = if ($eccLen -gt 0) { GetEC $dataCW.ToArray() $eccLen } else { @() }
+        $allCW = $dataCW.ToArray() + $ecCW
         
         Write-Status "Version: $MicroVersion ($(GetMicroSize $MicroVersion)x$(GetMicroSize $MicroVersion))"
         Write-Status "EC: $ecUse"
@@ -4561,25 +4580,25 @@ function New-QRCode {
                 $dataBlocks += ,$chunk
                 $ecBlocks += ,$ecChunk
             }
-            $allCWData = @()
+            [System.Collections.Generic.List[int]]$allCWData = New-Object System.Collections.Generic.List[int]
             $maxD = 0
             foreach ($blk in $dataBlocks) { if ($blk.Count -gt $maxD) { $maxD = $blk.Count } }
             for ($i=0; $i -lt $maxD; $i++) {
                 for ($bix=0; $bix -lt $blocks; $bix++) {
                     $blk = $dataBlocks[$bix]
-                    if ($i -lt $blk.Count) { $allCWData += $blk[$i] }
+                    if ($i -lt $blk.Count) { [void]$allCWData.Add($blk[$i]) }
                 }
             }
-            $allCWEC = @()
+            [System.Collections.Generic.List[int]]$allCWEC = New-Object System.Collections.Generic.List[int]
             $maxE = 0
             foreach ($blk in $ecBlocks) { if ($blk.Count -gt $maxE) { $maxE = $blk.Count } }
             for ($i=0; $i -lt $maxE; $i++) {
                 for ($bix=0; $bix -lt $blocks; $bix++) {
                     $blk = $ecBlocks[$bix]
-                    if ($i -lt $blk.Count) { $allCWEC += $blk[$i] }
+                    if ($i -lt $blk.Count) { [void]$allCWEC.Add($blk[$i]) }
                 }
             }
-            $allCW = $allCWData + $allCWEC
+            $allCW = $allCWData.ToArray() + $allCWEC.ToArray()
         } else {
             $ecCW = GetEC $dataCW $eccLen
             $allCW = $dataCW + $ecCW
@@ -5173,23 +5192,23 @@ function Start-BatchProcessing {
         $rowUnificarPDF = &$getRowVal "UnificarPDF" "" # si, no o vacio (usa global)
         
         # Extraer textos adicionales para debajo del QR
-        $bottomText = @()
+        [System.Collections.Generic.List[string]]$bottomText = New-Object System.Collections.Generic.List[string]
         if ($headerMap.Count -gt 0) {
             # Si hay cabeceras, buscamos Label1, Label2...
-            $labels = @()
+            [System.Collections.Generic.List[string]]$labels = New-Object System.Collections.Generic.List[string]
             for ($i=1; $i -le 5; $i++) {
                 $l = &$getRowVal "Label$i" ""
-                if (-not [string]::IsNullOrEmpty($l)) { $labels += $l }
+                if (-not [string]::IsNullOrEmpty($l)) { [void]$labels.Add($l) }
             }
             if ($labels.Count -gt 0) {
-                $bottomText = $labels
+                $bottomText.AddRange($labels)
             } else {
                 # Fallback: incluir solo columnas que NO son parámetros conocidos
                 $knownParams = @("data", "dato", "color", "color2", "bgcolor", "rounded", "frame", "logo", "symbol", "model", "microversion", "frametext", "foregroundcolor", "backgroundcolor", "nombrearchivo", "formatosalida", "unificarpdf")
                 foreach ($h in $headerMap.Keys) {
                     if ($knownParams -notcontains $h) {
                         $v = &$getRowVal $h ""
-                        if (-not [string]::IsNullOrEmpty($v)) { $bottomText += $v }
+                        if (-not [string]::IsNullOrEmpty($v)) { [void]$bottomText.Add($v) }
                     }
                 }
             }
@@ -5197,7 +5216,7 @@ function Start-BatchProcessing {
             # Sin cabeceras: todas las columnas excepto la de datos
             for ($i=0; $i -lt $cols.Count; $i++) {
                 if ($i -ne $colIndex) {
-                    $bottomText += $cols[$i].Trim()
+                    [void]$bottomText.Add($cols[$i].Trim())
                 }
             }
         }
@@ -5215,9 +5234,10 @@ function Start-BatchProcessing {
         }
         
         # Construir nombre completo
-        $nameParts = @($prefix, $baseName)
-        if (-not [string]::IsNullOrEmpty($suffix)) { $nameParts += $suffix }
-        if ($useTs) { $nameParts += "_" + (Get-Date -Format $tsFormat) }
+        [System.Collections.Generic.List[string]]$nameParts = New-Object System.Collections.Generic.List[string]
+        $nameParts.AddRange(@($prefix, $baseName))
+        if (-not [string]::IsNullOrEmpty($suffix)) { [void]$nameParts.Add($suffix) }
+        if ($useTs) { [void]$nameParts.Add("_" + (Get-Date -Format $tsFormat)) }
         
         # Formatos: Priorizar el de la fila
         $formatsRaw = if (-not [string]::IsNullOrEmpty($rowFormatoSalida)) { $rowFormatoSalida } else { (Get-IniValue $iniContent "QRPS" "QRPS_FormatoSalida" "svg") }

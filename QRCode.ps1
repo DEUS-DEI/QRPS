@@ -31,6 +31,7 @@ param(
     [int]$StructuredAppendTotal = 0,
     [int]$StructuredAppendParity = -1,
     [string]$StructuredAppendParityData = "",
+        [switch]$AutoSplit,
     [switch]$ShowConsole,
     [switch]$Decode,
     [switch]$QualityReport,
@@ -195,11 +196,29 @@ $script:EXP = @(1,2,4,8,16,32,64,128,29,58,116,232,205,135,19,38,76,152,45,90,18
 $script:LOG = @(0,0,1,25,2,50,26,198,3,223,51,238,27,104,199,75,4,100,224,14,52,141,239,129,28,193,105,248,200,8,76,113,5,138,101,47,225,36,15,33,53,147,142,218,240,18,130,69,29,181,194,125,106,39,249,185,201,154,9,120,77,228,114,166,6,191,139,98,102,221,48,253,226,152,37,179,16,145,34,136,54,208,148,206,143,150,219,189,241,210,19,92,131,56,70,64,30,66,182,163,195,72,126,110,107,58,40,84,250,133,186,61,202,94,155,159,10,21,121,43,78,212,229,172,115,243,167,87,7,112,192,247,140,128,99,13,103,74,222,237,49,197,254,24,227,165,153,119,38,184,180,124,17,68,146,217,35,32,137,46,55,63,209,91,149,188,207,205,144,135,151,178,220,252,190,97,242,86,211,171,20,42,93,158,132,60,57,83,71,109,65,162,31,45,67,216,183,123,164,118,196,23,73,236,127,12,111,246,108,161,59,82,41,157,85,170,251,96,134,177,187,204,62,90,203,89,95,176,156,169,160,81,11,245,22,235,122,117,44,215,79,174,213,233,230,231,173,232,116,214,244,234,168,80,88,175)
 
 # ISO/IEC 15418 - GS1 Application Identifiers basic map
-$script:GS1_AI = @{
-    '00'=@{L=18;T='SSCC'}; '01'=@{L=14;T='GTIN'}; '02'=@{L=14;T='CONTENT'}; '10'=@{L=0;T='BATCH'};
-    '11'=@{L=6;T='PROD DATE'}; '13'=@{L=6;T='PACK DATE'}; '15'=@{L=6;T='BEST BEFORE'}; '17'=@{L=6;T='EXPIRY'};
-    '21'=@{L=0;T='SERIAL'}; '30'=@{L=0;T='VAR COUNT'}; '310'=@{L=6;T='WEIGHT KG'}; '37'=@{L=0;T='COUNT'};
-    '400'=@{L=0;T='ORDER'}; '8004'=@{L=0;T='GIAI'}; '90'=@{L=0;T='INTERNAL'}
+# Cargar Identificadores de Aplicación GS1 desde archivo externo
+$gs1Path = Join-Path $PSScriptRoot "gs1_ai.json"
+if (Test-Path $gs1Path) {
+    try {
+        $jsonContent = Get-Content $gs1Path -Raw -Encoding UTF8
+        $gs1Data = $jsonContent | ConvertFrom-Json
+        $script:GS1_AI = @{}
+        foreach ($prop in $gs1Data.psobject.Properties) {
+            $script:GS1_AI[$prop.Name] = @{ L = $prop.Value.L; T = $prop.Value.T }
+        }
+        Write-Status "[GS1] Cargados $($script:GS1_AI.Count) identificadores desde gs1_ai.json"
+    } catch {
+        Write-Warning "Error cargando gs1_ai.json: $_. Usando valores por defecto."
+        $script:GS1_AI = @{ '01'=@{L=14;T='GTIN'}; '10'=@{L=0;T='BATCH'}; '21'=@{L=0;T='SERIAL'} }
+    }
+} else {
+    # Fallback si el archivo no existe
+    $script:GS1_AI = @{
+        '00'=@{L=18;T='SSCC'}; '01'=@{L=14;T='GTIN'}; '02'=@{L=14;T='CONTENT'}; '10'=@{L=0;T='BATCH'};
+        '11'=@{L=6;T='PROD DATE'}; '13'=@{L=6;T='PACK DATE'}; '15'=@{L=6;T='BEST BEFORE'}; '17'=@{L=6;T='EXPIRY'};
+        '21'=@{L=0;T='SERIAL'}; '30'=@{L=0;T='VAR COUNT'}; '310'=@{L=6;T='WEIGHT KG'}; '37'=@{L=0;T='COUNT'};
+        '400'=@{L=0;T='ORDER'}; '8004'=@{L=0;T='GIAI'}; '90'=@{L=0;T='INTERNAL'}
+    }
 }
 
 # Utility to ensure numbers use dot as decimal separator (for SVG/CSS)
@@ -1382,6 +1401,7 @@ function Get-Segment([string]$txt) {
 
 function Encode([array]$segments, [int]$ver, [string]$ec) {
     [System.Collections.Generic.List[int]]$bits = New-Object "System.Collections.Generic.List[int]"
+    [int]$currentEci = 26 # Default to UTF-8
     
     foreach ($seg in $segments) {
         [string]$mode = $seg.Mode
@@ -1402,17 +1422,38 @@ function Encode([array]$segments, [int]$ver, [string]$ec) {
         if ($mode -eq 'ECI') {
             # ECI Assignment Value (0-999999)
             [int]$val = [int]$txt
+            $currentEci = $val
             if ($val -lt 128) {
                 for ([int]$b=7; $b -ge 0; $b--) { [void]$bits.Add([int](($val -shr $b) -band 1)) }
             } elseif ($val -lt 16384) {
-                [void]$bits.Add(1); [void]$bits.Add(0) # First 2 bits 10
-                for ([int]$b=13; $b -ge 0; $b--) { [void]$bits.Add([int](($val -shr $b) -band 1)) }
-            } else {
-                 [void]$bits.Add(1); [void]$bits.Add(1); [void]$bits.Add(0) # First 3 bits 110
-                 for ([int]$b=20; $b -ge 0; $b--) { [void]$bits.Add([int](($val -shr $b) -band 1)) }
+                [void]$bits.Add(1); [void]$bits.Add(1); [void]$bits.Add(0) # Error en código original: 10 para < 16384 según ISO
+                # Corregimos según ISO/IEC 18004:
+                # 0....... (1 byte)
+                # 10...... ........ (2 bytes)
+                # 110..... ........ ........ (3 bytes)
+                $bits.RemoveAt($bits.Count - 1) # Quitamos el último bit si es necesario o simplemente lo reescribimos
+                # Limpiamos y reescribimos para mayor claridad
+                $bits.RemoveRange($bits.Count - 8, 8) # Quitamos el byte si acabamos de añadirlo mal
+                # Re-añadir Mode Indicator (0111 para ECI)
+                [void]$bits.Add(0); [void]$bits.Add(1); [void]$bits.Add(1); [void]$bits.Add(1)
+                
+                if ($val -lt 128) {
+                    [void]$bits.Add(0)
+                    for ([int]$b=6; $b -ge 0; $b--) { [void]$bits.Add([int](($val -shr $b) -band 1)) }
+                } elseif ($val -lt 16384) {
+                    [void]$bits.Add(1); [void]$bits.Add(0)
+                    for ([int]$b=13; $b -ge 0; $b--) { [void]$bits.Add([int](($val -shr $b) -band 1)) }
+                } else {
+                    [void]$bits.Add(1); [void]$bits.Add(1); [void]$bits.Add(0)
+                    for ([int]$b=20; $b -ge 0; $b--) { [void]$bits.Add([int](($val -shr $b) -band 1)) }
+                }
             }
             continue # Next segment
         }
+        
+        # Codificación por caracteres según ECI
+        # Si hay un segmento ECI previo, los siguientes segmentos 'B' se codifican según esa tabla.
+        # Por defecto UTF-8 (ECI 26) o ISO-8859-1 (ECI 3) según convención.
         
         if ($mode -eq 'SA') {
             [int]$idx = [int]$seg.Index
@@ -1465,7 +1506,16 @@ function Encode([array]$segments, [int]$ver, [string]$ec) {
                 }
             }
             'B' {
-                foreach ($byte in [System.Text.Encoding]::UTF8.GetBytes($txt)) {
+                [System.Text.Encoding]$enc = switch ($currentEci) {
+                    20 { [System.Text.Encoding]::GetEncoding(1251) } # Windows-1251 (Cyrillic)
+                    21 { [System.Text.Encoding]::GetEncoding(1256) } # Windows-1256 (Arabic)
+                    22 { [System.Text.Encoding]::GetEncoding(1253) } # Greek
+                    23 { [System.Text.Encoding]::GetEncoding(1254) } # Turkish
+                    24 { [System.Text.Encoding]::GetEncoding(1257) } # Baltic
+                    26 { [System.Text.Encoding]::UTF8 }
+                    default { [System.Text.Encoding]::UTF8 }
+                }
+                foreach ($byte in $enc.GetBytes($txt)) {
                     for ([int]$b = 7; $b -ge 0; $b--) { [void]$bits.Add([int](($byte -shr $b) -band 1)) }
                 }
             }
@@ -3592,7 +3642,8 @@ function ExportPdfMultiNative {
     param(
         [System.Collections.ArrayList]$pages, # Array de PSCustomObject con { type, m, scale, quiet, fg, bg, fg2, gradType, text, rounded, frame, frameColor, path, logoPath, logoScale }
         $path,
-        [string]$layout = "Default"
+        [string]$layout = "Default",
+        [string]$EmbedPath = ""
     )
 
     $fs = [System.IO.FileStream]::new($path, [System.IO.FileMode]::Create)
@@ -3724,7 +3775,8 @@ function ExportPdfMultiNative {
     &$WriteStr "<< /Linearized 1.0 /L 0 /H [ 0 0 ] /O 0 /E 0 /N 0 /T 0 >>`nendobj`n"
 
     &$StartObj # Obj 2: Catalog
-    &$WriteStr "<< /Type /Catalog /Pages $pagesRootId 0 R /Metadata $metadataId 0 R /OutputIntents [$outputIntentId 0 R] /MarkInfo $markInfoId 0 R /StructTreeRoot $structTreeRootId 0 R >>`nendobj`n"
+    $afEntry = if ($EmbedPath) { " /AF [ 11 0 R ] /Names << /EmbeddedFiles << /Names [(SourceData) 11 0 R] >> >> " } else { "" }
+    &$WriteStr "<< /Type /Catalog /Pages $pagesRootId 0 R /Metadata $metadataId 0 R /OutputIntents [$outputIntentId 0 R] /MarkInfo $markInfoId 0 R /StructTreeRoot $structTreeRootId 0 R $afEntry >>`nendobj`n"
 
     &$StartObj # Obj 3: Pages Root
     &$WriteStr "<< /Type /Pages /Kids [ "
@@ -4137,6 +4189,34 @@ end
     foreach ($seId in $structElementIds) { [void]$kArraySb.Append("$seId 0 R ") }
     &$WriteStr "<< /Type /StructTreeRoot /K [ $($kArraySb.ToString()) ] >>`nendobj`n"
 
+    # PDF/A-3 Embedding (Obj 10 & 11)
+    if ($EmbedPath -and (Test-Path $EmbedPath)) {
+        try {
+            $fileBytes = [System.IO.File]::ReadAllBytes($EmbedPath)
+            $fileName = [System.IO.Path]::GetFileName($EmbedPath)
+            $fileExt = [System.IO.Path]::GetExtension($EmbedPath).ToLower().Replace(".", "")
+            $mimeType = switch ($fileExt) {
+                "txt"  { "text/plain" }
+                "xml"  { "application/xml" }
+                "json" { "application/json" }
+                "csv"  { "text/csv" }
+                default { "application/octet-stream" }
+            }
+
+            # Obj 10: Embedded File Stream
+            &$StartObj
+            &$WriteStr "<< /Type /EmbeddedFile /Subtype /$mimeType /Length $($fileBytes.Length) >>`nstream`n"
+            $bw.Write($fileBytes)
+            &$WriteStr "`nendstream`nendobj`n"
+
+            # Obj 11: File Specification
+            &$StartObj
+            &$WriteStr "<< /Type /Filespec /F ($fileName) /UF ($fileName) /EF << /F 10 0 R /UF 10 0 R >> /AFRelationship /Source /Desc (Source data for QR generation) >>`nendobj`n"
+        } catch {
+            Write-Warning "Error al incrustar archivo fuente: $_"
+        }
+    }
+
     # Finalize Pages Root
     $currPos = $fs.Position
     $fs.Position = $kidsStartPos
@@ -4176,7 +4256,8 @@ function ExportPdf {
         [string]$fontFamily = "Arial, sans-serif",
         [string]$googleFont = "",
         [string]$moduleShape = "square",
-        [switch]$EInk
+        [switch]$EInk,
+        [string]$EmbedPath = ""
     )
     
     # Usar el motor nativo multi-página para generar un PDF de una sola página
@@ -4201,7 +4282,7 @@ function ExportPdf {
             moduleShape = $moduleShape
             eink = $EInk
         })
-        ExportPdfMultiNative -pages $pages -path $path -layout "Default"
+        ExportPdfMultiNative -pages $pages -path $path -layout "Default" -EmbedPath $EmbedPath
         if (Test-Path $path) {
             Write-Status "[OK] PDF nativo generado exitosamente en: $path"
             return
@@ -4451,8 +4532,31 @@ function ShowConsole($m) {
 
 function Test-IBAN($iban) {
     $clean = $iban.Replace(" ", "").ToUpper()
+    # 1. Validación básica de formato y longitud (ISO 13616)
     if ($clean -notmatch "^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$") { return $false }
-    return $true
+    
+    # 2. Validación MOD 97 (ISO 7064)
+    # Mover los primeros 4 caracteres al final
+    $rearranged = $clean.Substring(4) + $clean.Substring(0, 4)
+    
+    # Reemplazar letras por números (A=10, B=11, ..., Z=35)
+    $numericIban = ""
+    foreach ($char in $rearranged.ToCharArray()) {
+        if ([char]::IsLetter($char)) {
+            $numericIban += ([int]$char - [int][char]'A' + 10).ToString()
+        } else {
+            $numericIban += $char
+        }
+    }
+    
+    # Calcular módulo 97 de un número potencialmente muy grande
+    # Usamos [bigint] para evitar desbordamientos
+    try {
+        $bigNum = [System.Numerics.BigInteger]::Parse($numericIban)
+        return ($bigNum % 97) -eq 1
+    } catch {
+        return $false
+    }
 }
 
 function New-vCard {
@@ -4464,15 +4568,30 @@ function New-vCard {
         [string]$Url,
         [string]$Note
     )
-    if ($Email -and $Email -notmatch "^[^@\s]+@[^@\s]+\.[^@\s]+$") { Write-Warning "Formato de Email inválido en vCard: $Email" }
+    # Validación semántica básica
+    if ($Email -and $Email -notmatch "^[^@\s]+@[^@\s]+\.[^@\s]+$") { 
+        Write-Warning "Formato de Email inválido en vCard: $Email" 
+    }
+    if ($Tel -and $Tel -notmatch "^[\+\d\s\-\(\)]{7,25}$") {
+        Write-Warning "Formato de Teléfono sospechoso en vCard: $Tel"
+    }
+
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append("BEGIN:VCARD`r`nVERSION:3.0`r`n")
-    if ($Name) { [void]$sb.Append("N:$Name`r`nFN:$Name`r`n") }
-    if ($Org)  { [void]$sb.Append("ORG:$Org`r`n") }
-    if ($Tel)  { [void]$sb.Append("TEL:$Tel`r`n") }
-    if ($Email){ [void]$sb.Append("EMAIL:$Email`r`n") }
+    
+    # Escapar caracteres especiales en campos de texto (según RFC 2426)
+    $EscapeVCard = { param($t) $t.Replace('\', '\\').Replace(',', '\,').Replace(';', '\;') }
+
+    if ($Name) { 
+        $escName = &$EscapeVCard $Name
+        [void]$sb.Append("N:$escName`r`nFN:$escName`r`n") 
+    }
+    if ($Org)  { [void]$sb.Append("ORG:$(&$EscapeVCard $Org)`r`n") }
+    if ($Tel)  { [void]$sb.Append("TEL;TYPE=VOICE,CELL:$Tel`r`n") }
+    if ($Email){ [void]$sb.Append("EMAIL;TYPE=INTERNET:$Email`r`n") }
     if ($Url)  { [void]$sb.Append("URL:$Url`r`n") }
-    if ($Note) { [void]$sb.Append("NOTE:$Note`r`n") }
+    if ($Note) { [void]$sb.Append("NOTE:$(&$EscapeVCard $Note)`r`n") }
+    
     [void]$sb.Append("END:VCARD")
     return $sb.ToString()
 }
@@ -4525,27 +4644,40 @@ function New-EPC {
         [string]$Information = "", # Texto libre
         [string]$Currency = "EUR"
     )
-    if (-not (Test-IBAN $IBAN)) { throw "IBAN inválido: $IBAN" }
-    if ($Amount -le 0 -or $Amount -ge 1000000000) { throw "El monto debe estar entre 0.01 y 999,999,999.99" }
+    # 1. Validación estricta de IBAN (MOD 97)
+    if (-not (Test-IBAN $IBAN)) { throw "IBAN inválido o falló verificación MOD 97: $IBAN" }
     
-    $sb = [System.Text.StringBuilder]::new()
-    [void]$sb.AppendLine("BCD")
-    [void]$sb.AppendLine("002")
-    [void]$sb.AppendLine("1")
-    [void]$sb.AppendLine("SCT")
-    [void]$sb.AppendLine($BIC)
-    [void]$sb.AppendLine($Beneficiary)
-    [void]$sb.AppendLine($IBAN.Replace(" ", ""))
-    [void]$sb.AppendLine("$Currency$("{0:F2}" -f $Amount)")
-    [void]$sb.AppendLine("") # Purpose
+    # 2. Validación de límites EPC
+    if ($Beneficiary.Length -gt 70) { throw "El Beneficiario excede los 70 caracteres" }
+    if ($BIC -and $BIC -notmatch "^[A-Z0-9]{8}([A-Z0-9]{3})?$") { throw "BIC/SWIFT inválido (debe ser de 8 u 11 caracteres)" }
+    if ($Amount -le 0.01 -or $Amount -ge 1000000000) { throw "El monto debe estar entre 0.01 y 999,999,999.99" }
+    
+    # 3. Validación de Remesa / Información
     if ($Remittance) {
-        [void]$sb.AppendLine($Remittance)
-        [void]$sb.AppendLine("")
-    } else {
-        [void]$sb.AppendLine("")
-        [void]$sb.AppendLine($Information)
+        if ($Remittance.Length -gt 35) { throw "La Referencia Estructurada excede los 35 caracteres" }
     }
-    [void]$sb.AppendLine("") # Advice
+    if ($Information.Length -gt 140) { throw "La Información Libre excede los 140 caracteres" }
+
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine("BCD")        # Service Tag
+    [void]$sb.AppendLine("002")        # Version
+    [void]$sb.AppendLine("1")          # Character Set (1 = UTF-8)
+    [void]$sb.AppendLine("SCT")        # Identification (SCT = SEPA Credit Transfer)
+    [void]$sb.AppendLine($BIC.ToUpper())
+    [void]$sb.AppendLine($Beneficiary.Substring(0, [Math]::Min($Beneficiary.Length, 70)))
+    [void]$sb.AppendLine($IBAN.Replace(" ", "").ToUpper())
+    [void]$sb.AppendLine("$Currency$("{0:F2}" -f $Amount)")
+    [void]$sb.AppendLine("")           # Purpose (opcional)
+    
+    if ($Remittance) {
+        [void]$sb.AppendLine($Remittance.ToUpper())
+        [void]$sb.AppendLine("")       # Línea vacía para Information si hay Remittance
+    } else {
+        [void]$sb.AppendLine("")       # Línea vacía para Remittance
+        [void]$sb.AppendLine($Information.Substring(0, [Math]::Min($Information.Length, 140)))
+    }
+    [void]$sb.AppendLine("")           # Advice
+    
     return $sb.ToString().TrimEnd("`r`n")
 }
 
@@ -4674,6 +4806,33 @@ function Test-ECDSASignature {
     return $ecdsa.VerifyData($dataBytes, $signatureBytes)
 }
 
+function Get-MaxDataCapacity($version, $ecLevel, $mode) {
+    if ($version -eq 0) { $version = 40 }
+    if (-not $script:SPEC.ContainsKey("$version$ecLevel")) { return 0 }
+    $dataBytes = $script:SPEC["$version$ecLevel"].D
+    $totalBits = $dataBytes * 8
+    
+    # Restar overhead fijo (Terminator, etc. no es necesario para estimación bruta, 
+    # pero sí los indicadores de modo y longitud)
+    $overhead = 4 # Mode Indicator
+    $ccBits = switch ($mode) {
+        'N' { if($version -le 9){10} elseif($version -le 26){12} else{14} }
+        'A' { if($version -le 9){9}  elseif($version -le 26){11} else{13} }
+        'B' { if($version -le 9){8}  else{16} }
+        'K' { if($version -le 9){8}  elseif($version -le 26){10} else{12} }
+    }
+    $overhead += $ccBits
+    
+    $availableBits = $totalBits - $overhead
+    
+    switch ($mode) {
+        'N' { return [Math]::Floor($availableBits / 10) * 3 } # Aprox
+        'A' { return [Math]::Floor($availableBits / 11) * 2 } # Aprox
+        'B' { return [Math]::Floor($availableBits / 8) }
+        'K' { return [Math]::Floor($availableBits / 13) }
+    }
+}
+
 function New-QRCode {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -4693,6 +4852,7 @@ function New-QRCode {
         [int]$StructuredAppendTotal = 0,
         [int]$StructuredAppendParity = -1,
         [string]$StructuredAppendParityData = "",
+        [switch]$AutoSplit,
     [switch]$ShowConsole,
     [switch]$Decode,
     [switch]$QualityReport,
@@ -4744,6 +4904,69 @@ function New-QRCode {
         $LogoPath = $LogoPath.Trim('"').Trim("'")
         $ECLevel = 'H'
         Write-Status "[INFO] Logo detectado: $LogoPath. Forzando Nivel de Error H (High)."
+    }
+
+    # Lógica de Auto-split (Structured Append automático)
+    if ($AutoSplit -and $StructuredAppendTotal -eq 0 -and ($Symbol -eq 'AUTO' -or $Symbol -eq 'QR')) {
+        $maxCap = Get-MaxDataCapacity 40 $ECLevel 'B'
+        # Ajuste: el encabezado SA consume unos bits, restamos un margen de seguridad
+        $maxCap -= 10 
+        if ($Data.Length -gt $maxCap) {
+            Write-Status "[Auto-split] Datos exceden capacidad de un solo QR ($($Data.Length) > $maxCap). Fragmentando..."
+            $parity = Get-StructuredAppendParity $Data
+            $chunks = New-Object System.Collections.Generic.List[string]
+            for ($i = 0; $i -lt $Data.Length; $i += $maxCap) {
+                $len = [Math]::Min($maxCap, $Data.Length - $i)
+                [void]$chunks.Add($Data.Substring($i, $len))
+            }
+            if ($chunks.Count -gt 16) { throw "Los datos son demasiado grandes incluso para 16 fragmentos de Structured Append." }
+            
+            $results = New-Object System.Collections.Generic.List[object]
+            for ($idx = 0; $idx -lt $chunks.Count; $idx++) {
+                $partPath = if ($OutputPath) { 
+                    $dir = [System.IO.Path]::GetDirectoryName($OutputPath)
+                    $base = [System.IO.Path]::GetFileNameWithoutExtension($OutputPath)
+                    $ext = [System.IO.Path]::GetExtension($OutputPath)
+                    $suffix = ($idx + 1).ToString("D2")
+                    if ([string]::IsNullOrEmpty($dir)) { "${base}_$suffix$ext" } else { [System.IO.Path]::Combine($dir, "${base}_$suffix$ext") }
+                } else { $null }
+                
+                Write-Status "[Auto-split] Generando parte $($idx+1) de $($chunks.Count)..."
+                $res = New-QRCode -Data $chunks[$idx] `
+                                 -ECLevel $ECLevel `
+                                 -Version $Version `
+                                 -OutputPath $partPath `
+                                 -ModuleSize $ModuleSize `
+                                 -EciValue $EciValue `
+                                 -Symbol 'QR' `
+                                 -StructuredAppendIndex $idx `
+                                 -StructuredAppendTotal $chunks.Count `
+                                 -StructuredAppendParity $parity `
+                                 -ShowConsole:$ShowConsole `
+                                 -Decode:$Decode `
+                                 -QualityReport:$QualityReport `
+                                 -LogoPath $LogoPath `
+                                 -LogoScale $LogoScale `
+                                 -BottomText $BottomText `
+                                 -ForegroundColor $ForegroundColor `
+                                 -ForegroundColor2 $ForegroundColor2 `
+                                 -BackgroundColor $BackgroundColor `
+                                 -Rounded $Rounded `
+                                 -GradientType $GradientType `
+                                 -FrameText $FrameText `
+                                 -FrameColor $FrameColor `
+                                 -FontFamily $FontFamily `
+                                 -GoogleFont $GoogleFont `
+                                 -ModuleShape $ModuleShape `
+                                 -EInk:$EInk `
+                                 -Compress:$Compress `
+                                 -SignKeyPath $SignKeyPath `
+                                 -SignSeparator $SignSeparator `
+                                 -AutoSplit:$false
+                [void]$results.Add($res)
+            }
+            return $results.ToArray()
+        }
     }
 
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -5340,7 +5563,7 @@ function New-QRCode {
         if ($PSCmdlet.ShouldProcess($OutputPath, $label)) {
             switch ($ext) {
                 ".svg" { ExportSvg $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $ModuleShape $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
-                ".pdf" { ExportPdf $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $ModuleShape $GradientType $FrameText $FrameColor $FontFamily $GoogleFont }
+                ".pdf" { ExportPdf $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $BottomText $ForegroundColor $ForegroundColor2 $BackgroundColor $Rounded $ModuleShape $GradientType $FrameText $FrameColor $FontFamily $GoogleFont -EmbedPath $EmbedPath }
                 default { ExportPng $final $OutputPath $ModuleSize 4 $LogoPath $LogoScale $ForegroundColor $BackgroundColor $BottomText $ForegroundColor2 $Rounded $GradientType $FrameText $FrameColor $FontFamily $GoogleFont $ModuleShape }
             }
         }
@@ -5482,7 +5705,8 @@ function Start-BatchProcessing {
         [switch]$EInk,
         [switch]$Compress,
         [string]$SignKeyPath = "",
-        [string]$SignSeparator = "|"
+        [string]$SignSeparator = "|",
+        [string]$EmbedPath = ""
     )
     
     if (-not (Test-Path $IniPath) -and [string]::IsNullOrEmpty($InputFileOverride)) { 

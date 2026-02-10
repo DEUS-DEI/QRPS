@@ -33,6 +33,9 @@
 | **GS1 QR Code** | GS1 General Spec | ✅ | Soporte FNC1 y Application Identifiers. |
 | **Structured Append** | ISO/IEC 18004 | ✅ | División de datos en hasta 16 símbolos. |
 | **Decoding Engine** | ISO/IEC 18004 | ✅ | Decodificación nativa QR/Micro/rMQR. |
+| **Validación Semántica** | vCard/EPC/IBAN | ✅ | Verificación estricta de formatos (MOD 97, RFC 2426). |
+| **Auto-split** | ISO/IEC 18004 | ✅ | Fragmentación automática mediante Structured Append. |
+| **ECI Extendido** | ISO/IEC 18004 | ✅ | Soporte para Cirílico, Árabe, Griego, etc. |
 
 ---
 
@@ -50,12 +53,13 @@
 
 ## 🏛️ Cumplimiento Normativo (ISO/IEC)
 
-### 📄 PDF (ISO 14289-1 / PDF/UA-1)
+### 📄 PDF (ISO 14289-1 / PDF/UA-1 / PDF/A-3)
 Motor binario nativo diseñado para accesibilidad y archivo a largo plazo.
 - **Accesibilidad**: Estructura lógica dinámica (`StructTreeRoot`), etiquetas de figura y mapeo `/Pg`.
-- **Estándares**: Cumple con **ISO 32000-1 (PDF 1.7)** y **ISO 19005-2 (PDF/A-2b)**.
+- **Estándares**: Cumple con **ISO 32000-1 (PDF 1.7)** y **ISO 19005-3 (PDF/A-3)**.
+- **Incrustación**: Soporte para incrustación de archivos fuente (XML, JSON, CSV) mediante `/AF` (Attachment Feature).
 - **Unicode**: Mapeo CMap (ToUnicode) para extracción de texto garantizada.
-- **Optimización**: Diccionario de linealización (Obj 1) para visualización rápida.
+- **Optimización**: Diccionario de linealización (Obj 1) para visualización rápida y compresión `/FlateDecode`.
 
 ### 🎨 SVG (WCAG 2.1)
 Generación vectorial limpia basada en XML.

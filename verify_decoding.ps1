@@ -5,7 +5,7 @@ function Test-QRDecoding {
     Write-Host "--- Test 1: Standard QR Decoding ---"
     $data = "Hello QR"
     $qr = New-QRCode -Data $data -ECLevel 'M' -Symbol 'QR' -ShowConsole:$false
-    $decoded = Decode-QRCodeMatrix $qr
+    $decoded = ConvertFrom-QRCodeMatrix $qr
     if ($decoded.Text -eq $data) {
         Write-Host "SUCCESS: Standard QR decoded correctly." -ForegroundColor Green
     } else {
@@ -15,7 +15,7 @@ function Test-QRDecoding {
     Write-Host "`n--- Test 2: rMQR Decoding ---"
     $dataRMQR = "rMQR Test"
     $rmqr = New-QRCode -Data $dataRMQR -Symbol 'rMQR' -Version "R11x43" -ShowConsole:$false
-    $decodedRMQR = Decode-RMQRMatrix $rmqr
+    $decodedRMQR = ConvertFrom-RMQRMatrix $rmqr
     if ($decodedRMQR.Text -eq $dataRMQR) {
         Write-Host "SUCCESS: rMQR decoded correctly." -ForegroundColor Green
     } else {
@@ -40,7 +40,7 @@ function Test-QRDecoding {
         if ($found) { break }
     }
 
-    $decodedRS = Decode-QRCodeMatrix $qrRS
+    $decodedRS = ConvertFrom-QRCodeMatrix $qrRS
     if ($decodedRS.Text -eq $dataRS) {
         Write-Host "SUCCESS: QR with error decoded correctly using RS." -ForegroundColor Green
     } else {
@@ -52,11 +52,11 @@ function Test-QRDecoding {
         Write-Host "`n--- Test 4: Reed-Solomon Direct Test ---"
         # GF(256) test: [3, 2, 1] with 2 EC bytes
         $msg = @(1, 2, 3, 0, 0) # 3 data, 2 EC
-        # Use New-RS and Decode-ReedSolomon assuming they are available in QRCode.ps1
+        # Use New-RS and ConvertFrom-ReedSolomon assuming they are available in QRCode.ps1
         $ec = New-RS @(1, 2, 3) 2
         $full = @(1, 2, 3) + $ec
         $full[1] = $full[1] -bxor 0x55 # Introduce an error
-        $corrected = Decode-ReedSolomon $full 2
+        $corrected = ConvertFrom-ReedSolomon $full 2
         if ($corrected.Data[0] -eq 1 -and $corrected.Data[1] -eq 2 -and $corrected.Data[2] -eq 3) {
             Write-Host "SUCCESS: RS Direct Test passed."
         } else {

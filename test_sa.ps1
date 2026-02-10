@@ -35,7 +35,7 @@ function Get-SA-Info($m) {
         }
         $spec = $script:SPEC["$(($m.Size - 17) / 4)$($fi.EC)"]
         # Simplified decoding to just get segments
-        $dec = DecodeQRStream $allBytes [int](($m.Size - 17) / 4)
+        $dec = ConvertFrom-QRCodeStream $allBytes [int](($m.Size - 17) / 4)
         return $dec.Segments | Where-Object { $_.Mode -eq 'SA' }
     }
 }

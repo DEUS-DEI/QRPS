@@ -156,7 +156,7 @@ El motor reconoce y valida automáticamente los siguientes formatos mediante fun
   ```
 - **WIFI**: Configuración rápida de red inalámbrica.
   ```powershell
-  $wifi = New-WiFiConfig -Ssid "MiRed" -Password "Secret" -Auth "WPA"
+  $wifi = New-WiFiConfig -Ssid "MiRed" -WifiKey "Secret" -Auth "WPA"
   ```
 - **EPC (SEPA)**: Transferencias bancarias europeas estándar.
   ```powershell

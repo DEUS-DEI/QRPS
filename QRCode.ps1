@@ -214,7 +214,7 @@ function FromDot($val) {
 function GFMul([int]$a, [int]$b) { if($a -eq 0 -or $b -eq 0){return 0}; $s=$script:LOG[$a]+$script:LOG[$b]; if($s -ge 255){$s-=255}; return $script:EXP[$s] }
 function GFInv([int]$a) { if($a -eq 0){return 0}; return $script:EXP[255 - $script:LOG[$a]] }
 function GFDiv([int]$a, [int]$b) { if($a -eq 0){return 0}; if($b -eq 0){throw "Div por cero"}; $s=$script:LOG[$a]-$script:LOG[$b]; if($s -lt 0){$s+=255}; return $script:EXP[$s] }
-function Poly-Eval-GF([int[]]$p, [int]$x) { 
+function Invoke-PolyEvalGF([int[]]$p, [int]$x) { 
     [int]$y = 0
     foreach($c in $p){ $y = (GFMul $y $x) -bxor $c }
     return $y 
@@ -369,7 +369,7 @@ function Get-EncodingFromECI($eci) {
     }
 }
 
-function DecodeRMQRStream([int[]]$dataBytes, [hashtable]$spec) {
+function ConvertFrom-RMQRStream([int[]]$dataBytes, [hashtable]$spec) {
     [System.Collections.Generic.List[int]]$bits = New-Object System.Collections.Generic.List[int]
     foreach ($b in $dataBytes) { for ([int]$i=7;$i -ge 0;$i--){ [void]$bits.Add([int](($b -shr $i) -band 1)) } }
     [int]$idx = 0
@@ -557,8 +557,8 @@ function InitRMQRMatrix([hashtable]$spec) {
     return $m
 }
 
-function Decode-RMQRMatrix([hashtable]$m) {
-    if ($null -eq $m) { Write-Error "Decode-RMQRMatrix: m is null"; return $null }
+function ConvertFrom-RMQRMatrix([hashtable]$m) {
+    if ($null -eq $m) { Write-Error "ConvertFrom-RMQRMatrix: m is null"; return $null }
     [hashtable]$fi = ReadRMQRFormatInfo $m
     if ($null -eq $fi) { return $null }
     [hashtable]$spec = $null
@@ -635,14 +635,14 @@ function Decode-RMQRMatrix([hashtable]$m) {
     [int]$totalErrors = 0
     for([int]$bix=0; $bix -lt $blocks; $bix++){
         $fullBlock = $dataBlocks[$bix] + $ecBlocks[$bix]
-        $res = Decode-ReedSolomon $fullBlock $ecBlocks[$bix].Length
+        $res = ConvertFrom-ReedSolomon $fullBlock $ecBlocks[$bix].Length
         if($null -eq $res){ throw "Error RS irreparable en bloque rMQR $bix" }
         $dataBytesList.AddRange([int[]]$res['Data'])
         $totalErrors += [int]$res['Errors']
     }
 
     [int[]]$dataBytes = $dataBytesList.ToArray()
-    $dec = DecodeRMQRStream $dataBytes $spec
+    $dec = ConvertFrom-RMQRStream $dataBytes $spec
     $dec['Errors'] = $totalErrors
     return $dec
 }
@@ -763,12 +763,12 @@ function New-RS($data, $ecn) {
     return GetEC $data $ecn
 }
 
-function Decode-ReedSolomon($msg, $nsym) {
+function ConvertFrom-ReedSolomon($msg, $nsym) {
     # 1. Sindromes: S_i = C(alpha^i)
     $syn = @(0) * $nsym
     $hasError = $false
     for ($i = 0; $i -lt $nsym; $i++) {
-        $s = Poly-Eval-GF $msg ($script:EXP[$i])
+        $s = Invoke-PolyEvalGF $msg ($script:EXP[$i])
         $syn[$i] = $s
         if ($s -ne 0) { $hasError = $true }
     }
@@ -811,7 +811,7 @@ function Decode-ReedSolomon($msg, $nsym) {
     [System.Collections.Generic.List[int]]$errPos = New-Object System.Collections.Generic.List[int]
     for ($i = 0; $i -lt $msg.Count; $i++) {
         $xinv = $script:EXP[255 - $i]
-        if ((Poly-Eval-GF $sigma $xinv) -eq 0) {
+        if ((Invoke-PolyEvalGF $sigma $xinv) -eq 0) {
             [void]$errPos.Add($i)
         }
     }
@@ -842,8 +842,8 @@ function Decode-ReedSolomon($msg, $nsym) {
     foreach($p in $errPos){
         $xiInv = $script:EXP[255 - $p]
         $xi = $script:EXP[$p]
-        $num = Poly-Eval-GF $omega $xiInv
-        $den = Poly-Eval-GF $sigmaDeriv (GFMul $xiInv $xiInv)
+        $num = Invoke-PolyEvalGF $omega $xiInv
+        $den = Invoke-PolyEvalGF $sigmaDeriv (GFMul $xiInv $xiInv)
         $err = GFMul $xi (GFDiv $num $den)
         $res[$msg.Count - 1 - $p] = $res[$msg.Count - 1 - $p] -bxor $err
     }
@@ -1629,7 +1629,7 @@ function ExtractBitsMicro([hashtable]$m) {
     return $bits
 }
 
-function DecodeMicroQRStream($bytes, $ver) {
+function ConvertFrom-MicroQRStream($bytes, $ver) {
     [System.Collections.Generic.List[int]]$bits = New-Object "System.Collections.Generic.List[int]"
     foreach ($b in $bytes) { for ([int]$i=7;$i -ge 0;$i--){ [void]$bits.Add([int](([int]$b -shr $i) -band 1)) } }
     [int]$idx = 0
@@ -1707,9 +1707,8 @@ function DecodeMicroQRStream($bytes, $ver) {
     return @{ Text=$sbResult.ToString(); Segments=$segs }
 }
 
-function Decode-MicroQRMatrix($m) {
+function ConvertFrom-MicroQRMatrix($m) {
     $fi = ReadFormatInfoMicro $m
-    $size = $m.Size
     $ver = $fi.Version
     
     # Unmask
@@ -1728,15 +1727,14 @@ function Decode-MicroQRMatrix($m) {
     }
     
     # EC correction
-    $totalCw = GetMicroTotalCw $ver
     $spec = $script:SPEC_MICRO["$ver$($fi.EC)"]
     $dataCw = $spec.D
     $ecCw = $spec.E
     
-    $res = Decode-ReedSolomon $allBytes[0..($dataCw + $ecCw - 1)] $ecCw
+    $res = ConvertFrom-ReedSolomon $allBytes[0..($dataCw + $ecCw - 1)] $ecCw
     if ($null -eq $res) { throw "Error RS irreparable en Micro QR" }
     
-    $dec = DecodeMicroQRStream $res.Data $ver
+    $dec = ConvertFrom-MicroQRStream $res.Data $ver
     $dec.Errors = $res.Errors
     return $dec
 }
@@ -2090,7 +2088,6 @@ function GetPenalty([hashtable]$m) {
 }
 
 function ReadFormatInfo([hashtable]$m) {
-    [int]$size = [int]$m.Size
     $bits = New-Object System.Collections.Generic.List[int]
     [int[,]]$mMod = $m.Mod
     for ([int]$i = 0; $i -lt 15; $i++) {
@@ -2186,7 +2183,7 @@ function ExtractBitsQR([hashtable]$m) {
     return $bits
 }
 
-function DecodeQRStream([byte[]]$bytes, [int]$ver) {
+function ConvertFrom-QRCodeStream([byte[]]$bytes, [int]$ver) {
     [System.Collections.Generic.List[int]]$bits = New-Object System.Collections.Generic.List[int]
     foreach ($b in $bytes) { for ([int]$i=7;$i -ge 0;$i--){ $bits.Add([int](($b -shr $i) -band 1)) } }
     [int]$idx = 0
@@ -2305,7 +2302,7 @@ function DecodeQRStream([byte[]]$bytes, [int]$ver) {
     return @{ Text=$sbResult.ToString(); Segments=$segs; ECI=$eciActive }
 }
 
-function Decode-QRCodeMatrix($m) {
+function ConvertFrom-QRCodeMatrix($m) {
     $ver = [int](($m.Size - 17) / 4)
     # Marcar módulos funcionales para que UnmaskQR funcione correctamente
     $temp = InitM $ver
@@ -2330,7 +2327,7 @@ function Decode-QRCodeMatrix($m) {
     $ecPerBlock = $ECC_PER_BLOCK[$ver][$ecIdx]
     
     $g1 = $spec.G1; $d1 = $spec.D1
-    $g2 = $spec.G2; $d2 = $spec.D2
+    $d2 = $spec.D2
     
     [System.Collections.Generic.List[int[]]]$blocks = New-Object System.Collections.Generic.List[int[]]
     for($i=0; $i -lt $numBlocks; $i++){
@@ -2360,13 +2357,13 @@ function Decode-QRCodeMatrix($m) {
     [System.Collections.Generic.List[int]]$dataBytes = New-Object System.Collections.Generic.List[int]
     $totalErrors = 0
     foreach($b in $blocks){
-        $res = Decode-ReedSolomon $b $ecPerBlock
+        $res = ConvertFrom-ReedSolomon $b $ecPerBlock
         if($null -eq $res){ throw "Error de corrección Reed-Solomon irreparable" }
-        [void]$dataBytes.AddRange($res.Data)
+        [void]$dataBytes.AddRange([int[]]$res.Data)
         $totalErrors += $res.Errors
     }
 
-    $dec = DecodeQRStream $dataBytes $ver
+    $dec = ConvertFrom-QRCodeStream $dataBytes $ver
     $dec.Errors = $totalErrors
     $dec.TotalEC = $ecPerBlock * $numBlocks
     return $dec
@@ -3504,36 +3501,6 @@ function ExportPdfMultiNative {
         }
     }
 
-    $EscapePdfString = {
-        param($s)
-        if ([string]::IsNullOrEmpty($s)) { return "" }
-        return $s.Replace('\', '\\').Replace('(', '\(').Replace(')', '\)')
-    }
-
-    $GetGradientColor = {
-        param($hex1, $hex2, $ratio)
-        $ToRGB = {
-            param($h)
-            $h = $h.Replace("#", "")
-            if ($h.Length -eq 3) {
-                $r = [Convert]::ToInt32($h.Substring(0, 1) * 2, 16)
-                $g = [Convert]::ToInt32($h.Substring(1, 1) * 2, 16)
-                $b = [Convert]::ToInt32($h.Substring(2, 1) * 2, 16)
-            } else {
-                $r = [Convert]::ToInt32($h.Substring(0, 2), 16)
-                $g = [Convert]::ToInt32($h.Substring(2, 2), 16)
-                $b = [Convert]::ToInt32($h.Substring(4, 2), 16)
-            }
-            return @($r, $g, $b)
-        }
-        $rgb1 = &$ToRGB $hex1
-        $rgb2 = &$ToRGB $hex2
-        $r = ($rgb1[0] + ($rgb2[0] - $rgb1[0]) * $ratio) / 255.0
-        $g = ($rgb1[1] + ($rgb2[1] - $rgb1[1]) * $ratio) / 255.0
-        $b = ($rgb1[2] + ($rgb2[2] - $rgb1[2]) * $ratio) / 255.0
-        return "$(ToDot $r) $(ToDot $g) $(ToDot $b)"
-    }
-
     $EmbedImage = {
         param($imgFilePath)
         try {
@@ -3593,14 +3560,12 @@ function ExportPdfMultiNative {
     $bw.Write(@(37, 226, 227, 207, 211, 10)) # Binary marker (ISO 32000-1 compliance)
 
     # 1. Catalog & Metadata (ISO 16684-1 / PDF/A-2b / PDF/UA-1 / ISO 32000-1 Annex G)
-    $linearizedObjId = 1
     $catalogId = 2
     $pagesRootId = 3
     $metadataId = 4
     $outputIntentId = 5
     $markInfoId = 6
     $iccProfileId = 7
-    $toUnicodeId = 8
     $structTreeRootId = 9
 
     # XMP Metadata (ISO 16684-1 / Dublin Core)
@@ -3636,7 +3601,6 @@ function ExportPdfMultiNative {
     &$WriteStr "<< /Type /Catalog /Pages $pagesRootId 0 R /Metadata $metadataId 0 R /OutputIntents [$outputIntentId 0 R] /MarkInfo $markInfoId 0 R /StructTreeRoot $structTreeRootId 0 R >>`nendobj`n"
 
     &$StartObj # Obj 3: Pages Root
-    $kidsPlaceholderPos = $fs.Position + 25
     &$WriteStr "<< /Type /Pages /Kids [ "
     $kidsStartPos = $fs.Position
     for ($i=0; $i -lt $totalPages; $i++) { &$WriteStr "000 0 R " }
@@ -4335,7 +4299,7 @@ function ShowConsole($m) {
 
 # --- HELPERS PARA FORMATOS ESTRUCTURADOS ---
 
-function Validate-IBAN($iban) {
+function Test-IBAN($iban) {
     $clean = $iban.Replace(" ", "").ToUpper()
     if ($clean -notmatch "^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$") { return $false }
     return $true
@@ -4386,16 +4350,16 @@ function New-MeCard {
 function New-WiFiConfig {
     param(
         [Parameter(Mandatory)][string]$Ssid,
-        [string]$Password,
+        [string]$WifiKey,
         [ValidateSet('WEP','WPA','nopass')][string]$Auth = 'WPA',
         [switch]$Hidden
     )
-    if ($Auth -ne 'nopass' -and [string]::IsNullOrEmpty($Password)) {
+    if ($Auth -ne 'nopass' -and [string]::IsNullOrEmpty($WifiKey)) {
         throw "Se requiere contraseña para el tipo de seguridad $Auth"
     }
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append("WIFI:S:$Ssid;T:$Auth;")
-    if ($Auth -ne 'nopass') { [void]$sb.Append("P:$Password;") }
+    if ($Auth -ne 'nopass') { [void]$sb.Append("P:$WifiKey;") }
     if ($Hidden) { [void]$sb.Append("H:true;") }
     [void]$sb.Append(";")
     return $sb.ToString()
@@ -4411,7 +4375,7 @@ function New-EPC {
         [string]$Information = "", # Texto libre
         [string]$Currency = "EUR"
     )
-    if (-not (Validate-IBAN $IBAN)) { throw "IBAN inválido: $IBAN" }
+    if (-not (Test-IBAN $IBAN)) { throw "IBAN inválido: $IBAN" }
     if ($Amount -le 0 -or $Amount -ge 1000000000) { throw "El monto debe estar entre 0.01 y 999,999,999.99" }
     
     $sb = [System.Text.StringBuilder]::new()
@@ -4857,7 +4821,7 @@ function New-QRCode {
         $ecUse = $ECLevel
         $chosenKey = $null
         
-        if ($Version -ne 0 -and $Version -ne $null -and $script:RMQR_SPEC.ContainsKey($Version)) {
+        if ($Version -ne 0 -and $null -ne $Version -and $script:RMQR_SPEC.ContainsKey($Version)) {
             $chosenKey = $Version
         } else {
             $ordered = ($script:RMQR_SPEC.GetEnumerator() | Sort-Object { $_.Value.H } , { $_.Value.W })
@@ -5062,7 +5026,7 @@ function New-QRCode {
             Write-Host "-------------------------------------------------`n"
         }
     if ($Decode) {
-        $dec = Decode-RMQRMatrix $m
+        $dec = ConvertFrom-RMQRMatrix $m
         Write-Status "Decodificado con éxito:"
         Write-Status "Contenido: $($dec.Text)"
         Write-Status "ECI: $($dec.ECI)"
@@ -5200,13 +5164,13 @@ function New-QRCode {
     if ($Decode) {
         $dec = if ($Model -eq 'rMQR') {
             Write-Status "Detectado: rMQR"
-            Decode-RMQRMatrix $final
+            ConvertFrom-RMQRMatrix $final
         } elseif ($final.Size -lt 21) {
             Write-Status "Detectado: Micro QR"
-            Decode-MicroQRMatrix $final
+            ConvertFrom-MicroQRMatrix $final
         } else {
             Write-Status "Detectado: QR"
-            Decode-QRCodeMatrix $final
+            ConvertFrom-QRCodeMatrix $final
         }
         $symbolType = if ($Model -eq 'rMQR') { 'rMQR' } elseif ($final.Size -lt 21) { 'Micro' } else { 'QR' }
         $aimId = Get-AIM-ID $symbolType $EciValue $Fnc1First $Fnc1Second
@@ -5215,7 +5179,7 @@ function New-QRCode {
         $cleanText = $dec.Text
         if ($Fnc1First) {
             Write-Host "GS1 Parse (ISO 15418):" -ForegroundColor Gray
-            $cleanText = Parse-GS1 $dec.Text
+            $cleanText = ConvertFrom-GS1 $dec.Text
         }
         if ($dec.Errors -gt 0) { Write-Host "Errores corregidos: $($dec.Errors)" -ForegroundColor Cyan }
         Write-Status "Decodificado: $cleanText"
@@ -5251,7 +5215,7 @@ function Get-AIM-ID($symbol, $eci, $fnc1, $fnc2) {
     return "]Q$n"
 }
 
-function Parse-GS1($text) {
+function ConvertFrom-GS1($text) {
     if ($text -match "^\x1E\x04") { 
         Write-Host "[Sintaxis ISO 15434 detectada]" -ForegroundColor Yellow
     }
@@ -5310,7 +5274,7 @@ function Get-IniValue([string]$content, [string]$section, [string]$key, [string]
     return $defaultValue
 }
 
-function Clean-Name($name) {
+function Clear-Name($name) {
     if ([string]::IsNullOrWhiteSpace($name)) { return "unnamed" }
     # Normalizar para separar acentos de las letras (NFD)
     $normalized = $name.Normalize([System.Text.NormalizationForm]::FormD)
@@ -5585,12 +5549,12 @@ function Start-BatchProcessing {
         # Determinar nombre base
         $baseName = ""
         if (-not [string]::IsNullOrEmpty($rowNombreArchivo)) {
-            $baseName = Clean-Name $rowNombreArchivo
+            $baseName = Clear-Name $rowNombreArchivo
         } elseif ($useConsec) {
             $baseName = "$($taskIndex + 1)"
         } else {
             # Sanitizar nombre basado únicamente en los datos de la columna seleccionada
-            $baseName = Clean-Name $dataToEncode
+            $baseName = Clear-Name $dataToEncode
             if ($baseName.Length -gt 50) { $baseName = $baseName.Substring(0, 50) }
         }
         
@@ -5914,7 +5878,7 @@ function Show-Menu {
                         $pass = Read-Host "Contraseña"
                         $auth = Read-Host "Seguridad (WPA/WEP/nopass) [WPA]"
                         if (-not $auth) { $auth = "WPA" }
-                        try { $advData = New-WiFiConfig -Ssid $ssid -Password $pass -Auth $auth } catch { Write-Error $_; break }
+                        try { $advData = New-WiFiConfig -Ssid $ssid -WifiKey $pass -Auth $auth } catch { Write-Error $_; break }
                     }
                     "3" {
                         $name = Read-Host "Nombre"
@@ -5961,9 +5925,9 @@ function Show-Menu {
                 $path = Read-Host "Ruta de la imagen del QR"
                 if (Test-Path $path) {
                     $m = Import-QRCode $path
-                    if ($m.Width -ne $m.Height) { $dec = Decode-RMQRMatrix $m }
-                    elseif ($m.Size -lt 21) { $dec = Decode-MicroQRMatrix $m }
-                    else { $dec = Decode-QRCodeMatrix $m }
+                    if ($m.Width -ne $m.Height) { $dec = ConvertFrom-RMQRMatrix $m }
+                    elseif ($m.Size -lt 21) { $dec = ConvertFrom-MicroQRMatrix $m }
+                    else { $dec = ConvertFrom-QRCodeMatrix $m }
                     Write-Host "`nContenido: $($dec.Text)" -ForegroundColor Green
                 } else {
                     Write-Error "Archivo no encontrado"
@@ -5998,13 +5962,13 @@ if ($MyInvocation.InvocationName -ne '.' -and $MyInvocation.InvocationName -ne '
     try {
         if ($m.Width -ne $m.Height) {
             Write-Status "Detectado: rMQR"
-            $dec = Decode-RMQRMatrix $m
+            $dec = ConvertFrom-RMQRMatrix $m
         } elseif ($m.Size -lt 21) {
             Write-Status "Detectado: Micro QR"
-            $dec = Decode-MicroQRMatrix $m
+            $dec = ConvertFrom-MicroQRMatrix $m
         } else {
             Write-Status "Detectado: QR"
-            $dec = Decode-QRCodeMatrix $m
+            $dec = ConvertFrom-QRCodeMatrix $m
         }
         
         $fSegs = New-Object System.Collections.Generic.List[object]
@@ -6019,7 +5983,7 @@ if ($MyInvocation.InvocationName -ne '.' -and $MyInvocation.InvocationName -ne '
         foreach ($s in $dec.Segments) { if ($s.Mode -eq 'F1') { $hasF1 = $true; break } }
         if ($hasF1) {
             Write-Host "GS1 Parse (ISO 15418):" -ForegroundColor Gray
-            $cleanText = Parse-GS1 $dec.Text
+            $cleanText = ConvertFrom-GS1 $dec.Text
         }
         
         Write-Host "Contenido: $cleanText"

@@ -43,7 +43,7 @@ function Test-FileDecoding {
     # Generate
     New-QRCode -Data $dataB -OutputPath $svgPath -Symbol 'rMQR' -ShowConsole:$false
     # Decode
-    $cmd = ".\QRCode.ps1 -Decode -InputPath '$svgPath'"
+    $cmd = ".\QRCBScript.ps1 -Decode -InputPath '$svgPath'"
     Write-Host "Running: $cmd"
     $output = Invoke-Expression $cmd
     Write-Host ($output -join "`n")

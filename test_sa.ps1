@@ -1,6 +1,6 @@
 # Test Structured Append
 $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
-. (Join-Path $PSScriptRoot "QRCode.ps1")
+. (Join-Path $PSScriptRoot "QRCBScript.ps1")
 
 $data1 = "Hello "
 $data2 = "World!"

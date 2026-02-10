@@ -1,5 +1,5 @@
 
-. .\QRCode.ps1
+. .\QRCBScript.ps1
 
 function Test-QRDecoding {
     Write-Host "--- Test 1: Standard QR Decoding ---"
@@ -52,7 +52,7 @@ function Test-QRDecoding {
         Write-Host "`n--- Test 4: Reed-Solomon Direct Test ---"
         # GF(256) test: [3, 2, 1] with 2 EC bytes
         $msg = @(1, 2, 3, 0, 0) # 3 data, 2 EC
-        # Use New-RS and ConvertFrom-ReedSolomon assuming they are available in QRCode.ps1
+        # Use New-RS and ConvertFrom-ReedSolomon assuming they are available in QRCBScript.ps1
         $ec = New-RS @(1, 2, 3) 2
         $full = @(1, 2, 3) + $ec
         $full[1] = $full[1] -bxor 0x55 # Introduce an error

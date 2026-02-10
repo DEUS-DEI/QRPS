@@ -2,9 +2,9 @@
 
 Describe "QR Code Generator - Robustness & Extensions" {
     BeforeAll {
-        $ScriptPath = Join-Path $PSScriptRoot "QRCode.ps1"
+        $ScriptPath = Join-Path $PSScriptRoot "QRCBScript.ps1"
         if (-not (Test-Path $ScriptPath)) {
-            throw "QRCode.ps1 no encontrado en $ScriptPath"
+            throw "QRCBScript.ps1 no encontrado en $ScriptPath"
         }
         # Pester 3.4.0 syntax: Should Be, Should Match, Should Throw
     }

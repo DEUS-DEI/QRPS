@@ -100,34 +100,34 @@ Exportación vectorial profesional para la industria gráfica.
 
 **Generación Básica (SVG/EPS/PNG):**
 ```powershell
-.\QRCode.ps1 -Data "https://github.com" -OutputPath "codigo.svg"
-.\QRCode.ps1 -Data "https://github.com" -OutputPath "codigo.eps"
+.\QRCBScript.ps1 -Data "https://github.com" -OutputPath "codigo.svg"
+.\QRCBScript.ps1 -Data "https://github.com" -OutputPath "codigo.eps"
 ```
 
 **Salida Data URI (Base64):**
 ```powershell
-.\QRCode.ps1 -Data "Info" -DataUri
+.\QRCBScript.ps1 -Data "Info" -DataUri
 ```
 
 **Generación con Estilo (PDF):**
 ```powershell
-.\QRCode.ps1 -Data "Dato" -ForegroundColor "#0000FF" -Rounded 0.5 -FrameText "ESCANEAME" -OutputPath "estilo.pdf"
+.\QRCBScript.ps1 -Data "Dato" -ForegroundColor "#0000FF" -Rounded 0.5 -FrameText "ESCANEAME" -OutputPath "estilo.pdf"
 ```
 
 **Procesamiento por Lotes (TSV):**
 ```powershell
-.\QRCode.ps1 -InputFile "lista.tsv" -PdfUnico -PdfUnicoNombre "catalogo.pdf"
+.\QRCBScript.ps1 -InputFile "lista.tsv" -PdfUnico -PdfUnicoNombre "catalogo.pdf"
 ```
 
 **vCard y Pagos SEPA:**
 ```powershell
 # Ejemplo: Generar una vCard (Contacto)
 $contacto = New-vCard -Name "Juan Perez" -Tel "+34600000000" -Email "juan@ejemplo.com"
-.\QRCode.ps1 -Data $contacto -OutputPath "contacto.pdf"
+.\QRCBScript.ps1 -Data $contacto -OutputPath "contacto.pdf"
 
 # Ejemplo: Generar un Pago SEPA (EPC)
 $pago = New-EPC -Beneficiary "Empresa S.L." -IBAN "ES211234..." -Amount 125.50 -Information "Factura 2024-01"
-.\QRCode.ps1 -Data $pago -OutputPath "pago_sepa.pdf"
+.\QRCBScript.ps1 -Data $pago -OutputPath "pago_sepa.pdf"
 ```
 
 **Uso del Lanzador Interactivo:**
@@ -201,7 +201,7 @@ Convert-ImagesToPdf -inputDir ".\fotos" -outputPath "album.pdf" -layout "Grid4x5
 ### Structured Append
 Divide datos grandes en hasta 16 códigos QR vinculados.
 ```powershell
-.\QRCode.ps1 -Data "Datos muy largos..." -StructuredAppendIndex 0 -StructuredAppendTotal 3 -StructuredAppendParity 123
+.\QRCBScript.ps1 -Data "Datos muy largos..." -StructuredAppendIndex 0 -StructuredAppendTotal 3 -StructuredAppendParity 123
 ```
 
 ---

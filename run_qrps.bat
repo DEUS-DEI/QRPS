@@ -32,7 +32,7 @@ goto main_menu
 echo.
 echo [INFO] Iniciando procesamiento por lotes...
 echo Se usaran los valores de config.ini a menos que se indiquen overrides.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\QRCode.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\QRCBScript.ps1"
 pause
 goto main_menu
 
@@ -79,6 +79,6 @@ echo.
 set /p decodePath="Arrastra el archivo o ingresa la ruta (PNG/SVG): "
 echo.
 echo [INFO] Decodificando...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\QRCode.ps1" -Decode -InputPath "!decodePath!"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\QRCBScript.ps1" -Decode -InputPath "!decodePath!"
 pause
 goto main_menu

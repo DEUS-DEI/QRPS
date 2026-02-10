@@ -1,6 +1,6 @@
 # Test rMQR Decode
 $ErrorActionPreference = "Stop"
-. .\QRCode.ps1
+. .\QRCBScript.ps1
 
 Write-Host "--- Testing rMQR Decode ---" -ForegroundColor Cyan
 $data = "rMQR Test 123"

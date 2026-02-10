@@ -1,4 +1,4 @@
-# Benchmark for QRCode.ps1 optimization
+# Benchmark for QRCBScript.ps1 optimization
 param(
     [int]$Iterations = 10,
     [string]$TestData = "https://trae.ai/ - QR Code Power Shell Optimization Test - 2026"
@@ -6,10 +6,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $scriptDir = if ($MyInvocation.MyCommand.Definition) { Split-Path -Parent $MyInvocation.MyCommand.Definition } else { Get-Location }
-if (Test-Path (Join-Path $scriptDir "QRCode.ps1")) {
-    . (Join-Path $scriptDir "QRCode.ps1")
+if (Test-Path (Join-Path $scriptDir "QRCBScript.ps1")) {
+    . (Join-Path $scriptDir "QRCBScript.ps1")
 } else {
-    . .\QRCode.ps1
+    . .\QRCBScript.ps1
 }
 
 Write-Host "--- Starting Performance Benchmark ---" -ForegroundColor Cyan

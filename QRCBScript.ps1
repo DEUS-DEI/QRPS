@@ -71,7 +71,7 @@ function Show-Help {
 ==========================================================
 
 USO BASICO:
-  .\QRCode.ps1 -Data "Texto" -OutputPath "qr.pdf"
+  .\QRCBScript.ps1 -Data "Texto" -OutputPath "qr.pdf"
 
 MODOS DE OPERACION:
   1. CLI Directo:  Genera un solo QR pasando -Data.

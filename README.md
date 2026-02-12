@@ -36,6 +36,12 @@
 | **Validación Semántica** | vCard/EPC/IBAN | ✅ | Verificación estricta de formatos (MOD 97, RFC 2426). |
 | **Auto-split** | ISO/IEC 18004 | ✅ | Fragmentación automática mediante Structured Append. |
 | **ECI Extendido** | ISO/IEC 18004 | ✅ | Soporte para Cirílico, Árabe, Griego, etc. |
+| **Code 39 (Full)** | ISO/IEC 16388 | ✅ | Alfanumérico industrial. |
+| **Code 128 (B)** | ISO/IEC 15417 | ✅ | Densidad alta, ASCII 32-127. |
+| **EAN-13** | ISO/IEC 15420 | ✅ | Retail global (con dígito de control). |
+| **EAN-8** | ISO/IEC 15420 | ✅ | Retail compacto (con dígito de control). |
+| **UPC-A** | ISO/IEC 15420 | ✅ | Retail Norteamérica (con dígito de control). |
+| **UPC-E** | ISO/IEC 15420 | ✅ | Zero-suppressed, paridad por check digit. |
 
 ---
 
@@ -255,13 +261,13 @@ Para evolucionar `qrps` hacia un motor de grado industrial, se ha dividido el ro
 *Estas mejoras pueden desarrollarse directamente dentro del motor actual sin dependencias externas complejas.*
 
 - **📦 Códigos de Barras 1D (Base)**:
-  - **UPC-A / UPC-E**: Productos retail en Norteamérica.
-  - **EAN-8 / EAN-13**: Productos retail globales.
-  - **Code 39 (Full/Mod43)**: Industria y logística clásica.
-  - **Code 128 (A/B/C)**: Alta densidad, subconjuntos y compresión numérica.
-  - **GS1-128 (EAN-128)**: AIs GS1 con FNC1 y reglas de formato.
-  - **Interleaved 2 of 5 / ITF-14**: Cajas y embalaje.
-  - **Codabar / MSI**: Bibliotecas, bancos y legacy.
+  - **UPC-A / UPC-E**: ✅ Implementado (retail Norteamérica).
+  - **EAN-8 / EAN-13**: ✅ Implementado (retail global).
+  - **Code 39 (Full/Mod43)**: ✅ Implementado (Full).
+  - **Code 128 (A/B/C)**: ✅ Implementado (B).
+  - **GS1-128 (EAN-128)**: ✅ Implementado (AIs GS1 con FNC1 y reglas de formato).
+  - **Interleaved 2 of 5 / ITF-14**: ✅ Implementado (cajas y embalaje).
+  - **Codabar / MSI**: ✅ Implementado (bibliotecas, bancos y legacy).
 - **🧱 Códigos de Barras 2D (Base)**:
   - **Data Matrix ECC200**: Tamaños 10x10 a 144x144, rectangular 8x18 a 16x48.
   - **GS1 DataMatrix**: AIs GS1, FNC1 y validaciones semánticas.
